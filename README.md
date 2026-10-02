@@ -9,7 +9,9 @@ Arquitetura e decisões em [`docs/`](docs/). **Nada está ativo.**
 | `supabase/migrations/0001_core.sql` | Tabelas (RLS fechado; só `service_role`) |
 | `supabase/migrations/0002_functions.sql` | Regras do motor: ingestão idempotente, status monotônico, "pagou → para", régua, holdout, camada de envio (fila, limites, pausa, TTL, retentativa, incerteza), handoff explícito, IA, reconciliação, alertas |
 | `supabase/migrations/0003_views.sql` | Medição do holdout (intenção de tratar), lift, operação |
-| `supabase/seed/0001_config.sql` | Config inicial segura: **régua inativa, instância pausada**, holdout 10%, templates-rascunho |
+| `supabase/migrations/0004_hardening.sql` | Só `service_role`; `search_path` fixo nas funções |
+| `supabase/migrations/0005_fk_indexes.sql` | Índices das chaves estrangeiras (idempotente) |
+| `supabase/seed/0001_config.sql` | Config inicial segura: **régua inativa, nenhuma instância de envio** (provedor a decidir), holdout 10%, templates-rascunho |
 | `supabase/seed/0002_catalog_links.local.sql` | Links de entrega atuais (não versionar) + links públicos dos checkouts (a preencher) |
 | `n8n/build.mjs` → `n8n/dist/*.json` | 8 workflows importáveis, todos `active=false` |
 | `prompts/atendimento-system.md` | Prompt do atendimento (IA limitada à base) |
@@ -44,7 +46,7 @@ npm install && npm test
 | Telegram INFORUAN | Telegram API | token do bot |
 
 ## Implantação (ordem)
-1. **Supabase novo** → SQL Editor: `0001`, `0002`, `0003`, `seed/0001`, `seed/0002 (local)`.
+1. **Supabase** (`bsmuouivezjnfrcnamky`): `0001`–`0005` + `seed/0001` **já aplicados em 02/10/2026**. Falta `seed/0002 (local)`.
 2. `settings.internal_test_phones` ← telefones internos da equipe.
 3. **n8n novo**: criar as credenciais → `cp n8n/config.example.json n8n/config.local.json` (preencher, sem segredos) → `node n8n/build.mjs` → importar `n8n/dist/*.json` (continuam inativos).
 4. **Evolution**: seguir `ops/evolution-checklist.md` (webhook global primeiro).

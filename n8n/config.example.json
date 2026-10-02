@@ -1,7 +1,8 @@
 {
   "_comment": "Copie para config.local.json e preencha. SEM SEGREDOS aqui: tokens e chaves ficam só nas credenciais do n8n.",
-  "SUPABASE_URL": "https://SEU-PROJETO.supabase.co",
+  "SUPABASE_URL": "https://bsmuouivezjnfrcnamky.supabase.co",
   "WS": "inforuan",
+  "WEBHOOKS_VIA_N8N": false,
   "GG_BUSINESS_ID": "iCYZvBkyiGZxJMjcDJLGowWF3bo1",
   "GG_WEBHOOK_PATH_SUFFIX": "trocar-por-sufixo-aleatorio-longo",
   "EVOLUTION_BASE_URL": "https://SEU-SERVIDOR-EVOLUTION",

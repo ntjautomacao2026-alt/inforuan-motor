@@ -65,6 +65,9 @@ function wf(name, nodes, links, { sensitive = false } = {}) {
 }
 const WS = JSON.stringify(C.WS);
 
+// Webhooks externos agora entram por Edge Functions do Supabase (decisão 02/10).
+// IR-01/IR-02 só são gerados se WEBHOOKS_VIA_N8N=true no config (contingência).
+if (C.WEBHOOKS_VIA_N8N) {
 // ─── IR-01 Ingestão GGCheckout ──────────────────────────────────────────────
 x = 0;
 wf('IR-01 Ingestao GGCheckout', [
@@ -115,6 +118,8 @@ return [{ json: { p_ws_slug: ${WS}, p_source: 'evolution', p_dedupe_key: key, p_
   ['Gravar evento bruto', 'Responder 200'], ['Responder 200', 'Processar (etapa separada)'],
 ], { sensitive: true });
 
+}
+
 // ─── IR-03 Motor (inbox pendente + régua → fila + destravar envios) ─────────
 x = 0;
 wf('IR-03 Motor tick', [
@@ -127,7 +132,7 @@ wf('IR-03 Motor tick', [
   ['Régua: ações vencidas → fila', 'Destravar envios incertos'],
 ]);
 
-// ─── IR-04 Envio (camada única; adapter Evolution) ──────────────────────────
+// ─── IR-04 Envio (camada única) — adapter PROVISÓRIO: provedor de WhatsApp ainda não decidido ───
 x = 0;
 wf('IR-04 Envio WhatsApp', [
   schedule('A cada 10s', 10),

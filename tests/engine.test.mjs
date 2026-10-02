@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/seed/0001_config.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/seed/0001_config.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -20,7 +20,8 @@ async function setup({ holdout = 10 } = {}) {
   await db.exec(`
     update sequences set active = true;
     update experiments set holdout_pct = ${holdout}, salt = 'salt-fixo-de-teste';
-    update provider_instances set state = 'open', paused = false, pause_reason = null, last_health_check_at = now();
+    insert into provider_instances(workspace_id, provider, instance_name, state, paused, pause_reason, rate_per_minute, min_gap_seconds, daily_cap, last_health_check_at)
+      values (ws_id('inforuan'), 'evolution', 'inforuan-01', 'open', false, null, 4, 12, 150, now());
     update catalog_products set access_url = 'https://drive.example/acesso-' || external_product_id;
     update catalog_checkouts set public_url = 'https://pay.example/' || external_checkout_id;
     update settings set value = '["${INTERNAL}"]' where key = 'internal_test_phones';`);

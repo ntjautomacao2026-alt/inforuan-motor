@@ -95,8 +95,6 @@ select ws.id, t.key, 1, t.purpose, t.ttl, t.vars, t.body, t.cat from workspaces 
 where ws.slug = 'inforuan'
 on conflict (workspace_id, key, version) do nothing;
 
--- ─── Instância de envio (NASCE PAUSADA; limites conservadores e ajustáveis) ──
-insert into provider_instances(workspace_id, provider, instance_name, paused, pause_reason, rate_per_minute, min_gap_seconds, daily_cap)
-select ws.id, 'evolution', 'inforuan-01', true, 'not_activated', 4, 12, 150
-from workspaces ws where ws.slug = 'inforuan'
-on conflict (instance_name) do nothing;
+-- ─── Instância de envio ──────────────────────────────────────────────────────
+-- NÃO criada: o provedor de WhatsApp ainda não foi decidido. Sem instância, nada sai da fila.
+-- Quando decidir, inserir em provider_instances com paused = true e liberar via unpause_instance().
