@@ -1,0 +1,9 @@
+node_modules/
+n8n/config.local.json
+n8n/dist/
+supabase/seed/*.local.sql
+.env
+.env.*
+.codex/
+.claude/settings.local.json
+.DS_Store

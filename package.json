@@ -1,0 +1,12 @@
+{
+  "name": "inforuan-motor",
+  "private": true,
+  "type": "module",
+  "description": "Motor de monetização INFORUAN — testes locais das regras do banco (PGlite).",
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite": "^0.3.0"
+  }
+}
