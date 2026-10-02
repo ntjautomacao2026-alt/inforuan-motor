@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/seed/0001_config.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -398,4 +398,47 @@ test('Checagem pré-envio: guard carrega o id externo; cancel_outbound e reconci
   assert.equal((await one(db, `select status from outbound_messages where id=$1`, [m.id])).status, 'cancelled');
   const w = await all(db, `select claim_ai_work r from claim_ai_work('inforuan', 0, 5, $1)`, [at(7)]);
   assert.equal(w.length, 0);
+});
+
+test('Interface api: n8n_engine só executa funções de api; não lê tabelas nem chama funções de public', async () => {
+  const db = await setup({ holdout: 0 });
+  await gg(db, 'pix.generated', 'P1');
+  await dispatch(db, 6);
+  await db.query(`update outbound_messages set next_attempt_at = now() - interval '1 minute', queued_at = now() - interval '1 minute', ttl_at = now() + interval '1 hour'`);
+  await db.exec(`set role n8n_engine`);
+  await assert.rejects(db.query(`select * from public.contacts`), /permission denied/);
+  await assert.rejects(db.query(`select * from public.outbound_messages`), /permission denied/);
+  await assert.rejects(db.query(`select public.claim_outbound('inforuan-01', 1)`), /permission denied/);
+  await assert.rejects(db.query(`select * from public.v_recovery_holdout`), /permission denied/);
+  const m = await one(db, `select api.claim_outbound('inforuan-01', 1) r`);
+  assert.equal(m.r.template_key, 'pix_ativo');
+  assert.equal((await one(db, `select api.mark_outbound_result($1, true, 'PM-1') r`, [m.r.id])).r, 'sent');
+  await db.query(`select api.heartbeat('n8n', '{"v":"test"}')`);
+  await db.exec(`reset role`);
+  assert.ok(await one(db, `select 1 x from service_heartbeats where service = 'n8n'`));
+  assert.equal((await one(db, `select status from outbound_messages`)).status, 'sent');
+});
+
+test('Retenção: JSON bruto processado com mais de 30 dias é apagado; recente fica', async () => {
+  const db = await setup({ holdout: 0 });
+  await gg(db, 'pix.generated', 'OLD', { createdAt: '2026-08-01T13:00:00Z' });
+  await db.query(`update webhook_inbox set received_at = '2026-08-01T13:00:00Z'`);
+  await db.query(`update orders set updated_at = '2026-08-01T13:00:00Z'`);
+  await gg(db, 'pix.generated', 'NEW');
+  const r = await one(db, `select purge_retention(30, $1) r`, [at(0)]);
+  assert.equal(r.r.inbox_payloads, 1);
+  assert.equal(r.r.orders_raw, 1);
+  const rows = await all(db, `select payload from webhook_inbox order by id`);
+  assert.ok(rows[0].payload.purged_at && !rows[0].payload.customer, 'antigo sem dados pessoais');
+  assert.ok(rows[1].payload.customer, 'recente intacto');
+  assert.equal((await one(db, `select purge_retention(30, $1) r`, [at(0)])).r.inbox_payloads, 0, 'idempotente');
+});
+
+test('Vigia alerta quando o n8n para de mandar sinal de vida', async () => {
+  const db = await setup({ holdout: 0 });
+  await db.query(`select record_heartbeat('n8n', '{}', $1)`, [at(0)]);
+  await db.query(`select watchdog('inforuan', $1)`, [at(10)]);
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'n8n_heartbeat_stale'`)).n, 0);
+  await db.query(`select watchdog('inforuan', $1)`, [at(20)]);
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'n8n_heartbeat_stale'`)).n, 1);
 });
