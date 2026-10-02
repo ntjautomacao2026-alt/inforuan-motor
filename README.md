@@ -1,7 +1,7 @@
 # INFORUAN — Motor de monetização (fase 1: recuperação de Pix, pós-venda e atendimento)
 
 Núcleo **Supabase (estado e regras críticas) + n8n (execução/integrações)**. Transporte inicial: **Evolution via QR**, atrás de uma camada única de envio. O Leona fica só na coexistência oficial.
-Arquitetura e decisões em [`docs/`](docs/). **Nada está ativo.**
+**Comece por [`docs/00-visao-geral-e-retomada.md`](docs/00-visao-geral-e-retomada.md).** Arquitetura e decisões em [`docs/`](docs/). **Nada está ativo.**
 
 ## Estrutura
 | Caminho | O que é |
