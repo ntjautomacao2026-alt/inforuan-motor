@@ -1,0 +1,23 @@
+-- REVERSÃO da 0007 + 0008 (usar só se algo der errado). Cole no SQL Editor e clique em RUN.
+-- Passo 1 (sempre): desliga os agendamentos. É o que importa para parar qualquer automação.
+select cron.unschedule(jobname) from cron.job where jobname like 'inforuan-%';
+
+-- Passo 2 (opcional, reversão completa): depois do passo 1, rode NESTA ORDEM no SQL Editor:
+--   a) supabase/migrations/0002_functions.sql   (restaura on_order_pix_generated, enqueue_message, claim_outbound, watchdog)
+--   b) supabase/migrations/0004_hardening.sql   (search_path fixo)
+--   c) supabase/migrations/0006_api_interface.sql (watchdog com heartbeat + permissões)
+--   d) o bloco abaixo:
+-- begin;
+-- drop function if exists public.engine_tick(text, timestamptz);
+-- drop function if exists public.engine_housekeeping(text, timestamptz);
+-- drop function if exists public.simulate_outbound(text, int, timestamptz);
+-- drop function if exists public.set_engine_mode(text, text, text, timestamptz);
+-- drop function if exists public.engine_live(uuid);
+-- delete from provider_instances where instance_name = 'inforuan-sim'
+--   and not exists (select 1 from outbound_messages where provider_instance = 'inforuan-sim');
+-- alter table provider_instances drop constraint if exists provider_instances_provider_check;
+-- alter table provider_instances add constraint provider_instances_provider_check check (provider in ('evolution','meta_cloud'));
+-- delete from settings where key = 'engine_mode';
+-- drop extension if exists pg_cron;
+-- delete from supabase_migrations.schema_migrations where version in ('20261005182659','20261005190100');
+-- commit;

@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -14,7 +14,7 @@ const at = (min) => new Date(T0.getTime() + min * 60000).toISOString();
 const PHONE = '+5511988887777';
 const INTERNAL = '+5511900000001';
 
-async function setup({ holdout = 10 } = {}) {
+async function setup({ holdout = 10, mode = 'live' } = {}) {
   const db = new PGlite();
   for (const s of SQL) await db.exec(s);
   await db.exec(`
@@ -24,7 +24,8 @@ async function setup({ holdout = 10 } = {}) {
       values (ws_id('inforuan'), 'evolution', 'inforuan-01', 'open', false, null, 4, 12, 150, now());
     update catalog_products set access_url = 'https://drive.example/acesso-' || external_product_id;
     update catalog_checkouts set public_url = 'https://pay.example/' || external_checkout_id;
-    update settings set value = '["${INTERNAL}"]' where key = 'internal_test_phones';`);
+    update settings set value = '["${INTERNAL}"]' where key = 'internal_test_phones';
+    update settings set value = '"${mode}"' where key = 'engine_mode';`);
   return db;
 }
 
@@ -335,7 +336,7 @@ test('Rajada de erros pausa a instância; resultado incerto não reenvia às ceg
     const [m] = await claim(db, t);
     await db.query(`select mark_outbound_result($1, false, null, '500', true, false, $2)`, [m.id, at(t)]);
   }
-  assert.equal((await one(db, `select paused, pause_reason from provider_instances`)).pause_reason, 'error_burst');
+  assert.equal((await one(db, `select paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`)).pause_reason, 'error_burst');
   assert.equal((await claim(db, 6.3)).length, 0);
 });
 
@@ -441,4 +442,102 @@ test('Vigia alerta quando o n8n para de mandar sinal de vida', async () => {
   assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'n8n_heartbeat_stale'`)).n, 0);
   await db.query(`select watchdog('inforuan', $1)`, [at(20)]);
   assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'n8n_heartbeat_stale'`)).n, 1);
+});
+
+// ─── 0007: modo só internos, envio simulado e tarefas de banco ──────────────
+test('Só internos (padrão da 0007): cliente real não é matriculado nem sorteado; interno recebe a régua', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  await gg(db, 'pix.generated', 'R1');
+  assert.equal((await one(db, `select count(*)::int n from enrollments`)).n, 0);
+  assert.equal(await armOf(db), undefined, 'cliente real fora do holdout');
+  await gg(db, 'pix.generated', 'I1', { phone: INTERNAL });
+  assert.equal((await one(db, `select count(*)::int n from scheduled_actions`)).n, 4);
+  await dispatch(db, 6);
+  const out = await all(db, `select to_phone_e164 from outbound_messages`);
+  assert.deepEqual(out.map((o) => o.to_phone_e164), [INTERNAL]);
+});
+
+test('Só internos: pagamento de cliente real não enfileira pós-venda (fica registrado como suprimido)', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  await gg(db, 'pix.paid', 'R1');
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages`)).n, 0);
+  const ev = await one(db, `select payload from events where type = 'outbound.suppressed'`);
+  assert.equal(ev.payload.reason, 'internal_only');
+  assert.equal(ev.payload.template, 'pos_compra_acesso');
+  await gg(db, 'pix.paid', 'I1', { phone: INTERNAL });
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where template_key = 'pos_compra_acesso'`)).n, 1);
+});
+
+test('Modo inválido ou ausente vale como só internos; volta de live cancela não internos já na fila', async () => {
+  const db = await setup({ holdout: 0, mode: 'qualquer-coisa' });
+  await gg(db, 'pix.generated', 'R0');
+  assert.equal((await one(db, `select count(*)::int n from enrollments`)).n, 0);
+  await db.exec(`update settings set value = '"live"' where key = 'engine_mode'`);
+  await gg(db, 'pix.generated', 'R1', { phone: '+5511977776666' });
+  await dispatch(db, 6);
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where status = 'queued'`)).n, 1);
+  await db.query(`select set_engine_mode('inforuan', 'internal_only', 'teste')`);
+  assert.equal((await claim(db, 7)).length, 0);
+  assert.equal((await one(db, `select status_reason from outbound_messages`)).status_reason, 'internal_only');
+  await assert.rejects(db.query(`select set_engine_mode('inforuan', 'turbo', 'teste')`), /engine_mode_invalid/);
+  await assert.rejects(db.query(`select set_engine_mode('inforuan', 'live', '')`), /engine_mode_requires_operator/);
+  await db.query(`select set_engine_mode('inforuan', 'live', 'teste')`);
+  assert.ok(await one(db, `select 1 x from alerts where kind = 'engine_mode' and severity = 'critical'`));
+});
+
+test('Envio simulado: nasce pausado, só "envia" para internos, respeita o guard de pagamento', async () => {
+  const db = await setup({ holdout: 0 });                        // live: cliente real também entra na fila
+  await db.exec(`update provider_instances set paused = true where instance_name = 'inforuan-01'`);
+  const sim = await one(db, `select provider, paused, state from provider_instances where instance_name = 'inforuan-sim'`);
+  assert.deepEqual(sim, { provider: 'simulated', paused: true, state: 'open' });
+  await gg(db, 'pix.generated', 'R1');
+  await gg(db, 'pix.generated', 'I1', { phone: INTERNAL });
+  await dispatch(db, 6);
+  assert.equal((await one(db, `select simulate_outbound('inforuan-sim', 10, $1) r`, [at(6)])).r.simulated, 0, 'pausada');
+  await db.query(`select unpause_instance('inforuan-sim', 'teste')`);
+  assert.equal((await one(db, `select simulate_outbound('inforuan-sim', 10, $1) r`, [at(7)])).r.simulated, 1);
+  const rows = await all(db, `select to_phone_e164, status, provider, provider_message_id from outbound_messages order by to_phone_e164`);
+  const real = rows.find((r) => r.to_phone_e164 === PHONE);
+  const internal = rows.find((r) => r.to_phone_e164 === INTERNAL);
+  assert.equal(real.status, 'queued', 'simulada nunca pega cliente real');
+  assert.equal(internal.status, 'sent');
+  assert.equal(internal.provider, 'simulated');
+  assert.match(internal.provider_message_id, /^sim:/);
+  assert.ok(await one(db, `select 1 x from messages where provider = 'simulated' and origin = 'engine'`));
+  await assert.rejects(db.query(`select simulate_outbound('inforuan-01')`), /not_a_simulated_instance/);
+});
+
+test('engine_tick ponta a ponta (só internos): Pix → régua → envio simulado → pagou → pós-venda; vigia ignora a simulada', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  await db.exec(`delete from provider_instances where instance_name = 'inforuan-01'`);
+  await db.query(`select unpause_instance('inforuan-sim', 'teste')`);
+  const p = ggPayload('pix.generated', 'E1', { phone: INTERNAL });
+  await db.query(`select ingest_webhook('inforuan','ggcheckout','e1-gen','pix.generated','{}',$1)`, [p]);
+  const t0 = (await one(db, `select engine_tick('inforuan', $1) r`, [at(0)])).r;
+  assert.equal(t0.inbox.processed, 1);
+  assert.equal(t0.sim.simulated, 0);
+  const t6 = (await one(db, `select engine_tick('inforuan', $1) r`, [at(6)])).r;
+  assert.equal(t6.dispatch.enqueued, 1);
+  assert.equal(t6.sim.simulated, 1);
+  const paid = ggPayload('pix.paid', 'E1', { phone: INTERNAL });
+  await db.query(`select ingest_webhook('inforuan','ggcheckout','e1-paid','pix.paid','{}',$1)`, [paid]);
+  const t8 = (await one(db, `select engine_tick('inforuan', $1) r`, [at(8)])).r;
+  assert.equal(t8.inbox.processed, 1);
+  assert.equal(t8.sim.simulated, 1);
+  const sent = await all(db, `select template_key from outbound_messages where status = 'sent' order by sent_at`);
+  assert.deepEqual(sent.map((r) => r.template_key), ['pix_ativo', 'pos_compra_acesso']);
+  assert.equal((await one(db, `select count(*)::int n from scheduled_actions where status = 'pending'`)).n, 0, 'pagamento cancelou a régua');
+  assert.ok(await one(db, `select 1 x from service_heartbeats where service = 'db_tick'`));
+  await db.query(`select engine_housekeeping('inforuan', $1)`, [at(30)]);
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'health_stale'`)).n, 0);
+});
+
+test('n8n_engine não executa as funções novas de operação', async () => {
+  const db = await setup({ holdout: 0 });
+  await db.exec(`set role n8n_engine`);
+  for (const q of [`select public.engine_tick('inforuan')`, `select public.simulate_outbound()`,
+    `select public.set_engine_mode('inforuan', 'live', 'x')`, `select public.engine_housekeeping('inforuan')`]) {
+    await assert.rejects(db.query(q), /permission denied/, q);
+  }
+  await db.exec(`reset role`);
 });

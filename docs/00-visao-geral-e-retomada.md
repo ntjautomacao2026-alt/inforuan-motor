@@ -10,7 +10,8 @@
 - ✅ Conferência só de leitura aprovada: 0 reinícios, limites e redes corretos, porta fechada para fora, backups e restauração testados, outros projetos intactos.
 - ✅ **4 workflows importados e INATIVOS** (IR-03, IR-05, IR-06, IR-08). **0 credenciais.** IR-04 e IR-07 não foram importados.
 - ✅ **Banco interno do n8n migrado para PostgreSQL 17.11** (doc `14`; resultado no doc `12`). Contagens idênticas, backup novo testado, outros projetos intactos. O volume do PG16 fica guardado por 48 h.
-- ❌ Sem webhook, sem Edge Function, sem `pg_cron`, sem migração 0007, sem WhatsApp, sem mensagens.
+- ✅ **Etapa 2 aplicada no Supabase (05/10):** migração 0007 (modo **só internos** como padrão + envio simulado pausado) e 0008 (`pg_cron` com 3 jobs: tick a cada 30 s, handoffs + vigia a cada 5 min, retenção diária). Doc `15`.
+- ❌ Sem webhook, sem Edge Function, sem `pg_net`, sem WhatsApp, sem telefones internos cadastrados, régua inativa, sem mensagens.
 
 ---
 
@@ -75,7 +76,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 **Banco de dados (Supabase do INFORUAN, projeto `bsmuouivezjnfrcnamky`)**
 - ✅ Projeto novo, separado de qualquer outra operação.
-- ✅ Migrações **0001 a 0006 aplicadas**, mais a configuração inicial.
+- ✅ Migrações **0001 a 0008 aplicadas**, mais a configuração inicial.
 - ✅ **26 tabelas**, todas protegidas (RLS ligado, nenhum acesso público).
 - ✅ Regras do motor dentro do banco: pagamento interrompe a régua, nada duplicado, limites de envio, pausa automática, transferência para humano, registro de tudo.
 - ✅ **Porta restrita para o n8n** (schema `api`, com 10 funções).
@@ -107,7 +108,8 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `11` | Modo de execução no Claude (sessões, papéis, Gate de QA) |
 | `12` | Staging temporário implantado: estado atual, conferência e pendências |
 | `13` | Auditoria só de leitura da VPS compartilhada |
-| `14` | Roteiro da migração do PostgreSQL do n8n para a versão 17 (não executado) |
+| `14` | Roteiro da migração do PostgreSQL do n8n para a versão 17 (executado em 05/10) |
+| `15` | Etapa 2: modo só internos, envio simulado e `pg_cron` (aplicado em 05/10) |
 
 ---
 
@@ -119,7 +121,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - ❌ **Nenhuma Edge Function foi publicada.**
 - ❌ **Nenhum workflow está ativo.** No staging há 4 workflows importados, todos inativos e sem credenciais. O n8n Cloud não é usado.
 - ❌ **Nenhum provedor de WhatsApp foi conectado.**
-- ❌ **`pg_cron` e `pg_net` não estão instalados.** Nada roda sozinho no banco.
+- ⚙️ **`pg_cron` instalado** (0008): o banco processa a inbox, a régua e os handoffs sozinho. Com o modo **só internos**, a lista de internos vazia, a régua inativa e a instância simulada pausada, isso não gera nenhuma mensagem. **`pg_net` não está instalado**: o banco não faz chamadas de rede.
 - ❌ **Nenhuma pasta, produto ou checkout existente foi alterado.** A única criação na GGCheckout foi um **checkout de teste não publicado** (R$ 5, marcado `internal_test`), autorizado para o teste ponta a ponta.
 - ✅ **Os compradores atuais não perderam acesso a nada.**
 
@@ -144,6 +146,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - [ ] Provisionar a VPS exclusiva. *(staging temporário na VPS compartilhada: ✅)*
 - [x] Instalar o n8n e o banco interno dele (staging temporário).
 - [x] Migrar o banco interno do n8n para PostgreSQL 17 (doc `14`).
+- [x] Modo só internos + envio simulado + `pg_cron` no Supabase (doc `15`).
 - [ ] Conectar o n8n ao Supabase (pela porta restrita).
 - [ ] Escolher e conectar o WhatsApp.
 - [ ] Publicar a Edge Function da GGCheckout.
@@ -179,7 +182,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 ## 7. Próxima ação ao retomar
 
-> **Etapa 2: migração 0007 (modo "só internos") + `pg_cron`, só com autorização.** Depois: login do `n8n_engine` e reescrita dos workflows para `api.*`, sempre com tudo inativo. Após 07/10 18:15 UTC, decidir a remoção do volume do PG16.
+> **Etapa 3: liberar o login do `n8n_engine`** (senha gerada e digitada só por você) e conectar o n8n pelo pooler do Supabase, só com autorização. Depois: reescrever os workflows para `api.*` (o IR-03 e o IR-07 saem, porque agora rodam no `pg_cron`), sempre com tudo inativo. Após 07/10 18:15 UTC, decidir a remoção do volume do PG16.
 
 ---
 
@@ -188,5 +191,5 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - **Onde estamos:** o banco do motor está pronto e protegido no Supabase. O n8n roda num staging temporário, acessível só por túnel SSH, com 4 workflows inativos e sem credenciais.
 - **O que está pronto:** diagnóstico da GGCheckout, matriz comercial, banco com 26 tabelas e regras testadas (28 testes), porta restrita para o n8n, grupo de controle de 10%, workflows salvos no GitHub e documentação.
 - **O que está desligado:** **tudo que fala com cliente.** Régua desligada, sem webhook, sem Edge Function, sem workflow ativo, sem WhatsApp e sem agendamentos no banco. Ninguém recebeu mensagem.
-- **Próximo passo:** Etapa 2 (migração 0007 + `pg_cron`), aguardando autorização.
+- **Próximo passo:** Etapa 3 (login do `n8n_engine` + conexão do n8n ao Supabase), aguardando autorização.
 - **Decisões que dependem de você:** VPS, domínio, provedor de WhatsApp, Supabase Free ou Pro, aprovação dos textos, base de conhecimento do Ruan, e quando separar entregáveis e ativar upsell e cross-sell.
