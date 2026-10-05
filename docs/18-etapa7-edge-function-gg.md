@@ -1,6 +1,6 @@
 # Etapa 7 — Edge Function `gg-webhook` (entrada da GGCheckout)
 
-> **Status: PREPARADO E TESTADO LOCALMENTE. NÃO PUBLICADO.** Cada fase só com autorização. **Criar o webhook na GGCheckout é uma fase separada**, a última.
+> **Status: Fase A CONCLUÍDA em 05/10/2026** (0010 aplicada pelo MCP; código da função no banco idêntico ao do repositório, hash `21f10a77…`; só `service_role` executa; `anon`, `authenticated` e `n8n_engine` não; modo `internal_only`; 0 linhas na inbox, 0 eventos, 0 alertas). **Função ainda NÃO publicada.** Cada fase seguinte só com autorização. **Criar o webhook na GGCheckout é uma fase separada**, a última.
 
 ## 1. Desenho
 
