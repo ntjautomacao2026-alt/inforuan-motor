@@ -53,13 +53,14 @@ Provedor WA ─► Edge Function (segredo + validação + limite de taxa) ─┤
 | `caddy` | `caddy:2.x` | 80/443 (só para IPs do Cloudflare) | `caddy_data` | TLS, proxy reverso, cabeçalhos de segurança |
 | `n8n` | `n8nio/n8n:<versão estável>` | 5678 só na rede interna | `n8n_data` (binários temporários) | Editor e execuções. Modo regular |
 | `n8n-runner` | `n8nio/runners:<mesma versão>` | — | — | Code nodes isolados do processo principal |
-| `n8n-postgres` | `postgres:16-alpine` | **sem porta publicada** (rede interna) | `n8n_pg_data` | **Estado interno do n8n**. Usuário, senha e banco exclusivos (`n8n_inforuan`) |
+| `n8n-postgres` | `postgres:17-alpine` (o 16 só tem suporte de compatibilidade no n8n 2.x; ver doc `14`) | **sem porta publicada** (rede interna) | `n8n_pg_data` | **Estado interno do n8n**. Usuário, senha e banco exclusivos (`n8n_inforuan`) |
 | `redis` | `redis:7-alpine` | — | — | **Previsto e desligado** (perfil `queue` do compose). Só liga com queue mode ou necessidade comprovada |
 
 - Rede Docker interna isolada. Só o Caddy publica portas.
 - `restart: unless-stopped`, *healthchecks*, logs com rotação (10 MB × 5).
 - n8n: `DB_TYPE=postgresdb` apontando para `n8n-postgres`, `N8N_ENCRYPTION_KEY` exclusiva, `GENERIC_TIMEZONE=America/Sao_Paulo`, `EXECUTIONS_DATA_SAVE_ON_SUCCESS=none`, `EXECUTIONS_DATA_PRUNE=true`, `EXECUTIONS_DATA_MAX_AGE=168`, `N8N_DIAGNOSTICS_ENABLED=false`, `N8N_BLOCK_ENV_ACCESS_IN_NODE=true`, `N8N_COMMUNITY_PACKAGES_ENABLED=false`, `N8N_PUBLIC_API_DISABLED=true`, `N8N_SECURE_COOKIE=true`, `N8N_PROXY_HOPS=1`.
-- `infra/docker-compose.yml`, `Caddyfile` e `.env.example` ficam no repositório. O `.env` real nunca.
+- `infra/docker-compose.yml`, `Caddyfile` e `.env.example` (para a **VPS definitiva**, ainda não criados) ficam no repositório. O `.env` real nunca.
+- O staging **temporário** usa outro arquivo: `infra/staging/docker-compose.temporary.yml` (ver docs `12` e `13`).
 
 ## 3. Domínio e SSL (adiado)
 

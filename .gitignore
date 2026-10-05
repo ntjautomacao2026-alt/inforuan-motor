@@ -7,3 +7,7 @@ supabase/seed/*.local.sql
 .codex/
 .claude/settings.local.json
 .DS_Store
+infra/staging/.env
+docs/*.pdf
+!.env.example
+!**/.env.example

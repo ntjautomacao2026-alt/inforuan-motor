@@ -1,7 +1,16 @@
 # INFORUAN — Visão geral e ponto de retomada
 
 > **Comece por aqui sempre que voltar ao projeto.**
-> Atualizado em 02/10/2026. Projeto **pausado**, sem nada ligado.
+> Atualizado em 05/10/2026. **Staging temporário no ar**, tudo que fala com cliente continua desligado.
+
+## Status em 05/10/2026
+
+- ✅ **Staging temporário** do n8n implantado na VPS compartilhada (KVM 2), fora do EasyPanel, em `/opt/inforuan-staging` (doc `12`). Ele fica nessa VPS por 2 a 3 dias, até a VPS exclusiva.
+- ✅ Acesso somente por **túnel SSH** (`127.0.0.1:5679`), com chave dedicada `inforuan-staging-claude`. A chave temporária da implantação foi removida.
+- ✅ Conferência só de leitura aprovada: 0 reinícios, limites e redes corretos, porta fechada para fora, backups e restauração testados, outros projetos intactos.
+- ✅ **4 workflows importados e INATIVOS** (IR-03, IR-05, IR-06, IR-08). **0 credenciais.** IR-04 e IR-07 não foram importados.
+- ⏳ **Migração do banco interno do n8n de PG16 para PG17:** roteiro pronto (doc `14`), **aguardando autorização**.
+- ❌ Sem webhook, sem Edge Function, sem `pg_cron`, sem migração 0007, sem WhatsApp, sem mensagens.
 
 ---
 
@@ -95,6 +104,10 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `08` | Leona (descartado) |
 | `09` | Camada de envio |
 | `10` | Infraestrutura da VPS e limites do Supabase |
+| `11` | Modo de execução no Claude (sessões, papéis, Gate de QA) |
+| `12` | Staging temporário implantado: estado atual, conferência e pendências |
+| `13` | Auditoria só de leitura da VPS compartilhada |
+| `14` | Roteiro da migração do PostgreSQL do n8n para a versão 17 (não executado) |
 
 ---
 
@@ -104,7 +117,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - ❌ **Nenhuma régua está ativa.**
 - ❌ **Nenhum webhook foi criado na GGCheckout.**
 - ❌ **Nenhuma Edge Function foi publicada.**
-- ❌ **Nenhum workflow está ativo** (o n8n Cloud está vazio, e os workflows existem só como arquivos no GitHub).
+- ❌ **Nenhum workflow está ativo.** No staging há 4 workflows importados, todos inativos e sem credenciais. O n8n Cloud não é usado.
 - ❌ **Nenhum provedor de WhatsApp foi conectado.**
 - ❌ **`pg_cron` e `pg_net` não estão instalados.** Nada roda sozinho no banco.
 - ❌ **Nenhuma pasta, produto ou checkout existente foi alterado.** A única criação na GGCheckout foi um **checkout de teste não publicado** (R$ 5, marcado `internal_test`), autorizado para o teste ponta a ponta.
@@ -114,7 +127,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 ## 5. Decisões pendentes
 
-1. **VPS:** contratação e configuração (proposta: Hostinger KVM 2, em São Paulo).
+1. **VPS exclusiva:** contratação e configuração (proposta: Hostinger KVM 2, em São Paulo). Até lá, o staging roda temporariamente na VPS compartilhada.
 2. **Domínio e subdomínios** da ntj.
 3. **Provedor oficial de WhatsApp.**
 4. **Supabase Free ou Pro.** Hoje o Free atende o MVP, com retenção de dados, backup diário próprio e sinal de vida. Os gatilhos para trocar estão no doc `10`.
@@ -128,12 +141,13 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 ## 6. Roadmap Crawl → Walk → Run
 
 ### 🐢 Crawl — colocar o MVP seguro no ar
-- [ ] Provisionar a VPS.
-- [ ] Instalar o n8n e o banco interno dele.
+- [ ] Provisionar a VPS exclusiva. *(staging temporário na VPS compartilhada: ✅)*
+- [x] Instalar o n8n e o banco interno dele (staging temporário).
+- [ ] Migrar o banco interno do n8n para PostgreSQL 17 (doc `14`).
 - [ ] Conectar o n8n ao Supabase (pela porta restrita).
 - [ ] Escolher e conectar o WhatsApp.
 - [ ] Publicar a Edge Function da GGCheckout.
-- [ ] Importar os workflows **inativos**.
+- [x] Importar os workflows **inativos** (4 de 6; precisam ser refeitos para `api.*`).
 - [ ] Testar de ponta a ponta com um contato interno.
 - [ ] Criar o webhook da GGCheckout.
 - [ ] Ativar a recuperação de Pix **aos poucos**.
@@ -165,14 +179,14 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 ## 7. Próxima ação ao retomar
 
-> **Conectar o MCP da Hostinger, confirmar a VPS exclusiva do INFORUAN e realizar uma auditoria somente de leitura antes de instalar qualquer coisa.**
+> **Aprovar (ou ajustar) o roteiro do doc `14` e executar a migração do banco interno do n8n para PostgreSQL 17.** Depois: migração 0007 + `pg_cron` (só com autorização), login do `n8n_engine` e reescrita dos workflows para `api.*`, sempre com tudo inativo.
 
 ---
 
 ## 8. Como me atualizar em 2 minutos
 
-- **Onde estamos:** o banco do motor está pronto e protegido no Supabase. O projeto está pausado antes da etapa da VPS.
+- **Onde estamos:** o banco do motor está pronto e protegido no Supabase. O n8n roda num staging temporário, acessível só por túnel SSH, com 4 workflows inativos e sem credenciais.
 - **O que está pronto:** diagnóstico da GGCheckout, matriz comercial, banco com 26 tabelas e regras testadas (28 testes), porta restrita para o n8n, grupo de controle de 10%, workflows salvos no GitHub e documentação.
 - **O que está desligado:** **tudo que fala com cliente.** Régua desligada, sem webhook, sem Edge Function, sem workflow ativo, sem WhatsApp e sem agendamentos no banco. Ninguém recebeu mensagem.
-- **Próximo passo:** conectar o MCP da Hostinger e fazer uma auditoria só de leitura da VPS.
+- **Próximo passo:** migração do PostgreSQL do n8n para a versão 17 (doc `14`), aguardando autorização.
 - **Decisões que dependem de você:** VPS, domínio, provedor de WhatsApp, Supabase Free ou Pro, aprovação dos textos, base de conhecimento do Ruan, e quando separar entregáveis e ativar upsell e cross-sell.

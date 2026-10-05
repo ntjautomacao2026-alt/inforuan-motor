@@ -1,0 +1,115 @@
+# ⚠️ OBSOLETO — NÃO USAR.
+# Plano antigo (05/10/2026) de instalar o staging como serviço Compose do EasyPanel.
+# Foi SUBSTITUÍDO por infra/staging/docker-compose.temporary.yml (Docker Compose direto no
+# servidor, fora do EasyPanel, sem redes do EasyPanel, n8n só em 127.0.0.1 via túnel SSH).
+# Mantido apenas como registro histórico. A extensão .txt é proposital para não ser usado por engano.
+#
+# # INFORUAN — n8n staging (portável: o mesmo arquivo vai para a VPS definitiva).
+# # NÃO IMPLANTADO. Segredos vêm de variáveis (EasyPanel / .env), nunca deste arquivo.
+# # Postgres só na rede interna; n8n também na rede `easypanel` apenas para o Traefik.
+# name: inforuan-staging
+# 
+# services:
+#   postgres:
+#     image: postgres:16-alpine
+#     restart: unless-stopped
+#     environment:
+#       POSTGRES_DB: n8n_inforuan
+#       POSTGRES_USER: n8n_inforuan
+#       POSTGRES_PASSWORD: ${INFORUAN_PG_PASSWORD:?defina INFORUAN_PG_PASSWORD}
+#     volumes:
+#       - inforuan_pg_data:/var/lib/postgresql/data
+#     networks: [inforuan_internal]
+#     healthcheck:
+#       test: ["CMD-SHELL", "pg_isready -U n8n_inforuan -d n8n_inforuan"]
+#       interval: 10s
+#       timeout: 5s
+#       retries: 10
+#     deploy:
+#       resources:
+#         limits: { cpus: "0.5", memory: 512M }
+# 
+#   n8n:
+#     image: n8nio/n8n:2.35.4
+#     restart: unless-stopped
+#     depends_on:
+#       postgres: { condition: service_healthy }
+#     environment:
+#       DB_TYPE: postgresdb
+#       DB_POSTGRESDB_HOST: postgres
+#       DB_POSTGRESDB_DATABASE: n8n_inforuan
+#       DB_POSTGRESDB_USER: n8n_inforuan
+#       DB_POSTGRESDB_PASSWORD: ${INFORUAN_PG_PASSWORD}
+#       N8N_ENCRYPTION_KEY: ${INFORUAN_N8N_ENCRYPTION_KEY:?defina INFORUAN_N8N_ENCRYPTION_KEY}
+#       N8N_HOST: ${INFORUAN_N8N_HOST:?defina INFORUAN_N8N_HOST}
+#       N8N_PROTOCOL: https
+#       WEBHOOK_URL: https://${INFORUAN_N8N_HOST}/
+#       N8N_PROXY_HOPS: "1"
+#       N8N_SECURE_COOKIE: "true"
+#       GENERIC_TIMEZONE: America/Sao_Paulo
+#       TZ: America/Sao_Paulo
+#       EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+#       EXECUTIONS_DATA_SAVE_ON_ERROR: all
+#       EXECUTIONS_DATA_PRUNE: "true"
+#       EXECUTIONS_DATA_MAX_AGE: "168"
+#       N8N_DIAGNOSTICS_ENABLED: "false"
+#       N8N_PERSONALIZATION_ENABLED: "false"
+#       N8N_COMMUNITY_PACKAGES_ENABLED: "false"
+#       N8N_BLOCK_ENV_ACCESS_IN_NODE: "true"
+#       N8N_RUNNERS_ENABLED: "true"
+#       N8N_RUNNERS_MODE: external
+#       N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
+#       N8N_RUNNERS_AUTH_TOKEN: ${INFORUAN_RUNNERS_TOKEN:?defina INFORUAN_RUNNERS_TOKEN}
+#     volumes:
+#       - inforuan_n8n_data:/home/node/.n8n
+#     networks: [inforuan_internal, easypanel]
+#     deploy:
+#       resources:
+#         limits: { cpus: "1.0", memory: 1536M }
+# 
+#   n8n-runner:
+#     image: n8nio/runners:2.35.4
+#     restart: unless-stopped
+#     depends_on: [n8n]
+#     environment:
+#       N8N_RUNNERS_TASK_BROKER_URI: http://n8n:5679
+#       N8N_RUNNERS_AUTH_TOKEN: ${INFORUAN_RUNNERS_TOKEN}
+#     networks: [inforuan_internal]
+#     deploy:
+#       resources:
+#         limits: { cpus: "0.5", memory: 512M }
+# 
+#   pg-backup:
+#     image: prodrigestivill/postgres-backup-local:16
+#     restart: unless-stopped
+#     depends_on:
+#       postgres: { condition: service_healthy }
+#     environment:
+#       POSTGRES_HOST: postgres
+#       POSTGRES_DB: n8n_inforuan
+#       POSTGRES_USER: n8n_inforuan
+#       POSTGRES_PASSWORD: ${INFORUAN_PG_PASSWORD}
+#       SCHEDULE: "@daily"
+#       BACKUP_KEEP_DAYS: "7"
+#       BACKUP_KEEP_WEEKS: "4"
+#       BACKUP_KEEP_MONTHS: "0"
+#       TZ: America/Sao_Paulo
+#     volumes:
+#       - inforuan_pg_backups:/backups
+#     networks: [inforuan_internal]
+#     deploy:
+#       resources:
+#         limits: { cpus: "0.25", memory: 256M }
+# 
+#   # redis: previsto e DESLIGADO — só com queue mode ou necessidade comprovada.
+# 
+# networks:
+#   inforuan_internal:
+#     internal: true        # sem saída para a internet e invisível aos outros projetos
+#   easypanel:
+#     external: true        # rede do Traefik do EasyPanel (só o n8n entra nela)
+# 
+# volumes:
+#   inforuan_n8n_data:
+#   inforuan_pg_data:
+#   inforuan_pg_backups:
