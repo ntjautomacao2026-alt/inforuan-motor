@@ -149,3 +149,13 @@ test('Permissões: só service_role executa ingest_gg_webhook (n8n_engine não)'
   await assert.rejects(db.query(`select public.ingest_gg_webhook('{}'::jsonb, '{}'::jsonb)`), /permission denied/);
   await db.exec('reset role');
 });
+
+test('Arquivo único do painel é idêntico às fontes testadas (handler.ts + index.ts)', () => {
+  const dir = root + 'supabase/functions/gg-webhook/';
+  const h = readFileSync(dir + 'handler.ts', 'utf8');
+  const i = readFileSync(dir + 'index.ts', 'utf8').replace("import { handleGgWebhook } from './handler.ts';\n", '');
+  const painel = readFileSync(root + 'supabase/manual/gg-webhook-painel.ts', 'utf8');
+  assert.ok(painel.includes(h.trimEnd()), 'handler.ts inteiro');
+  assert.ok(painel.endsWith(i), 'index.ts inteiro, sem o import');
+  assert.doesNotMatch(painel, /from '\.\/handler\.ts'/);
+});

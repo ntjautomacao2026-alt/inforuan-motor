@@ -113,7 +113,8 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `16` | Etapa 3: login do `n8n_engine` (Parte A concluída em 05/10) e credencial no n8n (Parte B pendente) |
 | `17` | Etapa 4: workflows só pela `api` (preparado no repositório; importação depois de 07/10) |
 | `18` | Etapa 7: Edge Function `gg-webhook` (preparada e testada localmente; não publicada) |
-| `19` | Provedor de WhatsApp: comparação, custos e recomendação (decisão pendente) |
+| `19` | Provedor de WhatsApp: comparação, custos e recomendação (API oficial = evolução futura) |
+| `20` | WhatsApp via Evolution própria (sessão Web): plano em 3 fases (decisão de 05/10; aguardando autorização) |
 
 ---
 
