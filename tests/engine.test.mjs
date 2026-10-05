@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -540,4 +540,13 @@ test('n8n_engine não executa as funções novas de operação', async () => {
     await assert.rejects(db.query(q), /permission denied/, q);
   }
   await db.exec(`reset role`);
+});
+
+test('0009: n8n_engine continua sem login, com limite de conexões e timeouts de sessão', async () => {
+  const db = await setup({ holdout: 0 });
+  const r = await one(db, `select rolcanlogin, rolconnlimit, (select setconfig from pg_db_role_setting s where s.setrole = r.oid) cfg
+                             from pg_roles r where rolname = 'n8n_engine'`);
+  assert.equal(r.rolcanlogin, false, 'login só é liberado à parte, pelo operador');
+  assert.equal(r.rolconnlimit, 10);
+  assert.deepEqual([...r.cfg].sort(), ['idle_in_transaction_session_timeout=60s', 'lock_timeout=5s', 'statement_timeout=15s']);
 });

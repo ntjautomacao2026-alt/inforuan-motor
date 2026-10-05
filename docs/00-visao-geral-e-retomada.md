@@ -76,11 +76,11 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 **Banco de dados (Supabase do INFORUAN, projeto `bsmuouivezjnfrcnamky`)**
 - ✅ Projeto novo, separado de qualquer outra operação.
-- ✅ Migrações **0001 a 0008 aplicadas**, mais a configuração inicial.
+- ✅ Migrações **0001 a 0009 aplicadas**, mais a configuração inicial.
 - ✅ **26 tabelas**, todas protegidas (RLS ligado, nenhum acesso público).
 - ✅ Regras do motor dentro do banco: pagamento interrompe a régua, nada duplicado, limites de envio, pausa automática, transferência para humano, registro de tudo.
 - ✅ **Porta restrita para o n8n** (schema `api`, com 10 funções).
-- ✅ Usuário **`n8n_engine`**: **sem login** por enquanto e **sem acesso direto às tabelas**. Só pode usar a porta restrita.
+- ✅ Usuário **`n8n_engine`**: **login liberado em 05/10** (senha só no Keychain do Mac; no banco, só cifrada), pelo pooler com TLS verificado. **Sem acesso direto às tabelas**: só pode usar a porta restrita (testado: 10 de 10 bloqueios).
 - ✅ **Grupo de controle em 10%**, para medir quanto a régua realmente recupera.
 - ✅ **Régua desligada.**
 - ✅ Limpeza automática de dados brutos após 30 dias, pronta mas ainda não agendada.
@@ -110,6 +110,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `13` | Auditoria só de leitura da VPS compartilhada |
 | `14` | Roteiro da migração do PostgreSQL do n8n para a versão 17 (executado em 05/10) |
 | `15` | Etapa 2: modo só internos, envio simulado e `pg_cron` (aplicado em 05/10) |
+| `16` | Etapa 3: login do `n8n_engine` (Parte A concluída em 05/10) e credencial no n8n (Parte B pendente) |
 
 ---
 
@@ -182,7 +183,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 ## 7. Próxima ação ao retomar
 
-> **Etapa 3: liberar o login do `n8n_engine`** (senha gerada e digitada só por você) e conectar o n8n pelo pooler do Supabase, só com autorização. Depois: reescrever os workflows para `api.*` (o IR-03 e o IR-07 saem, porque agora rodam no `pg_cron`), sempre com tudo inativo. Após 07/10 18:15 UTC, decidir a remoção do volume do PG16.
+> **Depois de 07/10 18:15 UTC:** decidir a remoção do volume do PG16 e fazer a **Parte B da Etapa 3** (credencial Postgres no n8n, com a CA do Supabase; doc `16`), só com autorização. **Em paralelo, sem tocar no n8n:** preparar a Etapa 4, a reescrita dos workflows para `api.*` (o IR-03 e o IR-07 saem, porque agora rodam no `pg_cron`), sempre com tudo inativo.
 
 ---
 
@@ -191,5 +192,5 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - **Onde estamos:** o banco do motor está pronto e protegido no Supabase. O n8n roda num staging temporário, acessível só por túnel SSH, com 4 workflows inativos e sem credenciais.
 - **O que está pronto:** diagnóstico da GGCheckout, matriz comercial, banco com 26 tabelas e regras testadas (28 testes), porta restrita para o n8n, grupo de controle de 10%, workflows salvos no GitHub e documentação.
 - **O que está desligado:** **tudo que fala com cliente.** Régua desligada, sem webhook, sem Edge Function, sem workflow ativo, sem WhatsApp e sem agendamentos no banco. Ninguém recebeu mensagem.
-- **Próximo passo:** Etapa 3 (login do `n8n_engine` + conexão do n8n ao Supabase), aguardando autorização.
+- **Próximo passo:** preparar a Etapa 4 (workflows em `api.*`). Depois de 07/10 18:15 UTC, a Parte B da Etapa 3 (credencial no n8n).
 - **Decisões que dependem de você:** VPS, domínio, provedor de WhatsApp, Supabase Free ou Pro, aprovação dos textos, base de conhecimento do Ruan, e quando separar entregáveis e ativar upsell e cross-sell.

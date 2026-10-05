@@ -17,6 +17,10 @@ Núcleo **Supabase (estado e regras críticas) + n8n (execução/integrações)*
 | `supabase/migrations/0008_pg_cron.sql` | `pg_cron`: tick a cada 30 s, handoffs + vigia a cada 5 min, retenção diária (só Supabase) |
 | `supabase/manual/0008_aplicar_no_sql_editor.sql` | Mesma 0008 em transação + registro no histórico (foi aplicada pelo SQL Editor) |
 | `supabase/manual/0007_0008_reverter.sql` | Reversão: desliga os jobs (passo 1) e, se preciso, volta as funções originais (passo 2) |
+| `supabase/migrations/0009_n8n_engine_limites.sql` | Limites de sessão do `n8n_engine` (10 conexões; timeouts). Não libera login |
+| `ops/gerar-senha-n8n-engine.mjs` | Gera a senha do `n8n_engine` no Mac (Keychain) e copia o SQL com a senha já cifrada (SCRAM) |
+| `ops/testar-n8n-engine.mjs` | Testa o login pelo pooler com TLS verificado e os bloqueios de permissão (lê a senha do Keychain; não a exibe) |
+| `infra/certs/supabase-prod-ca-2021.crt` | CA pública do Supabase, para verificar o certificado do pooler |
 | `supabase/seed/0001_config.sql` | Config inicial segura: **régua inativa, nenhuma instância de envio** (provedor a decidir), holdout 10%, templates-rascunho |
 | `supabase/seed/0002_catalog_links.local.sql` | Links de entrega atuais (não versionar) + links públicos dos checkouts (a preencher) |
 | `n8n/build.mjs` → `n8n/dist/*.json` | 8 workflows importáveis, todos `active=false` |
@@ -52,7 +56,7 @@ npm install && npm test
 | Telegram INFORUAN | Telegram API | token do bot |
 
 ## Implantação (ordem)
-1. **Supabase** (`bsmuouivezjnfrcnamky`): `0001`–`0006` + `seed/0001` **já aplicados em 02/10/2026** (0006 via SQL Editor); `0007` (MCP) e `0008` (SQL Editor) **aplicados em 05/10/2026**. Falta `seed/0002 (local)`.
+1. **Supabase** (`bsmuouivezjnfrcnamky`): `0001`–`0006` + `seed/0001` **já aplicados em 02/10/2026** (0006 via SQL Editor); `0007` (MCP), `0008` (SQL Editor) e `0009` (MCP) **aplicados em 05/10/2026**; login do `n8n_engine` liberado (doc 16). Falta `seed/0002 (local)`.
 2. `settings.internal_test_phones` ← telefones internos da equipe.
 3. **n8n novo**: criar as credenciais → `cp n8n/config.example.json n8n/config.local.json` (preencher, sem segredos) → `node n8n/build.mjs` → importar `n8n/dist/*.json` (continuam inativos).
 4. **Evolution**: seguir `ops/evolution-checklist.md` (webhook global primeiro).
