@@ -21,11 +21,15 @@ Núcleo **Supabase (estado, regras críticas e agendamentos via `pg_cron`) + n8n
 | `ops/gerar-senha-n8n-engine.mjs` | Gera a senha do `n8n_engine` no Mac (Keychain) e copia o SQL com a senha já cifrada (SCRAM) |
 | `ops/testar-n8n-engine.mjs` | Testa o login pelo pooler com TLS verificado e os bloqueios de permissão (lê a senha do Keychain; não a exibe) |
 | `infra/certs/supabase-prod-ca-2021.crt` | CA pública do Supabase, para verificar o certificado do pooler |
+| `supabase/migrations/0010_ingestao_gg.sql` | `ingest_gg_webhook`: só internos (descarta cliente real sem dados), limite por minuto, deduplicação, processamento imediato |
+| `supabase/functions/gg-webhook/` | Edge Function de entrada da GGCheckout (segredo Bearer/x-secret/HMAC, 64 KB, logs sem dados). Doc 18 |
+| `ops/gerar-segredo-gg-webhook.mjs` / `ops/testar-gg-webhook.mjs` | Segredo do webhook no Keychain; teste da função publicada sem dado pessoal |
 | `supabase/seed/0001_config.sql` | Config inicial segura: **régua inativa, nenhuma instância de envio** (provedor a decidir), holdout 10%, templates-rascunho |
 | `supabase/seed/0002_catalog_links.local.sql` | Links de entrega atuais (não versionar) + links públicos dos checkouts (a preencher) |
 | `n8n/build.mjs` → `n8n/dist/*.json` | Workflows importáveis (IR-05, IR-06, IR-08), todos `active=false`, só via `api.*` (credencial Postgres do `n8n_engine`) |
 | `prompts/atendimento-system.md` | Prompt do atendimento (IA limitada à base) |
 | `tests/engine.test.mjs` | 37 testes: regras críticas no Postgres real (PGlite) + o SQL de cada nó dos workflows rodando como `n8n_engine` |
+| `tests/gg-webhook.test.mjs` | 8 testes da Edge Function (HTTP + banco real) |
 | `ops/evolution-checklist.md` | (Só se o provedor escolhido for a Evolution) webhook global, instância, coexistência |
 
 ## Testes

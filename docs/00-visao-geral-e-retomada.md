@@ -112,6 +112,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `15` | Etapa 2: modo só internos, envio simulado e `pg_cron` (aplicado em 05/10) |
 | `16` | Etapa 3: login do `n8n_engine` (Parte A concluída em 05/10) e credencial no n8n (Parte B pendente) |
 | `17` | Etapa 4: workflows só pela `api` (preparado no repositório; importação depois de 07/10) |
+| `18` | Etapa 7: Edge Function `gg-webhook` (preparada e testada localmente; não publicada) |
 
 ---
 
@@ -151,7 +152,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - [x] Modo só internos + envio simulado + `pg_cron` no Supabase (doc `15`).
 - [ ] Conectar o n8n ao Supabase (pela porta restrita).
 - [ ] Escolher e conectar o WhatsApp.
-- [ ] Publicar a Edge Function da GGCheckout.
+- [ ] Publicar a Edge Function da GGCheckout. *(código e testes prontos, doc `18`)*
 - [x] Importar os workflows **inativos** (4 antigos, ainda com service_role).
 - [x] Refazer os workflows para `api.*` (IR-05, IR-06, IR-08; IR-03/IR-07 no `pg_cron`). Preparado no repositório (doc `17`); importação depois de 07/10.
 - [ ] Testar de ponta a ponta com um contato interno.
@@ -185,7 +186,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 
 ## 7. Próxima ação ao retomar
 
-> **Depois de 07/10 18:15 UTC, com autorização:** decidir a remoção do volume do PG16 → CA do Supabase no n8n (`NODE_EXTRA_CA_CERTS`) → credencial Postgres do `n8n_engine` (doc `16`, Parte B) → trocar os 4 workflows antigos pelos 3 novos, inativos (doc `17`). **Sem tocar no n8n até lá:** preparar a Etapa 7 (Edge Function da GGCheckout) e definir o provedor de WhatsApp.
+> **Depois de 07/10 18:15 UTC, com autorização:** decidir a remoção do volume do PG16 → CA do Supabase no n8n (`NODE_EXTRA_CA_CERTS`) → credencial Postgres do `n8n_engine` (doc `16`, Parte B) → trocar os 4 workflows antigos pelos 3 novos, inativos (doc `17`). **Sem tocar no n8n até lá:** publicar a Edge Function `gg-webhook` (doc `18`, fases A–D, com autorização) e definir o provedor de WhatsApp. O webhook na GGCheckout (fase E) tem autorização própria.
 
 ---
 
@@ -194,5 +195,5 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - **Onde estamos:** o banco do motor está pronto e protegido no Supabase. O n8n roda num staging temporário, acessível só por túnel SSH, com 4 workflows inativos e sem credenciais.
 - **O que está pronto:** diagnóstico da GGCheckout, matriz comercial, banco com 26 tabelas e regras testadas (28 testes), porta restrita para o n8n, grupo de controle de 10%, workflows salvos no GitHub e documentação.
 - **O que está desligado:** **tudo que fala com cliente.** Régua desligada, sem webhook, sem Edge Function, sem workflow ativo, sem WhatsApp e sem agendamentos no banco. Ninguém recebeu mensagem.
-- **Próximo passo:** depois de 07/10 18:15 UTC, Parte B da Etapa 3 + importação da Etapa 4 (docs `16` e `17`). Até lá, preparar a Edge Function (Etapa 7).
+- **Próximo passo:** publicar a Edge Function (doc `18`) e escolher o provedor de WhatsApp. Depois de 07/10 18:15 UTC: Parte B da Etapa 3 + importação da Etapa 4 (docs `16` e `17`).
 - **Decisões que dependem de você:** VPS, domínio, provedor de WhatsApp, Supabase Free ou Pro, aprovação dos textos, base de conhecimento do Ruan, e quando separar entregáveis e ativar upsell e cross-sell.
