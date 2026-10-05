@@ -17,7 +17,7 @@ x-logging: &default-logging
 
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:17-alpine
     container_name: inforuan-staging-postgres
     restart: unless-stopped
     environment:
@@ -121,7 +121,7 @@ services:
     logging: *default-logging
 
   pg-backup:
-    image: prodrigestivill/postgres-backup-local:16
+    image: prodrigestivill/postgres-backup-local:17
     container_name: inforuan-staging-pg-backup
     restart: unless-stopped
     depends_on:
@@ -157,6 +157,6 @@ volumes:
   inforuan_n8n_data:
     name: inforuan-staging-n8n-data
   inforuan_pg_data:
-    name: inforuan-staging-postgres-data
+    name: inforuan-staging-postgres17-data
   inforuan_pg_backups:
     name: inforuan-staging-postgres-backups

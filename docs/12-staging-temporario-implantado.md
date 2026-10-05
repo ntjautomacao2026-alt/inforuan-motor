@@ -67,7 +67,7 @@ Uso inicial observado: aproximadamente 357 MB de RAM no conjunto.
 
 O n8n 2.35.4 iniciou normalmente, mas informou que o PostgreSQL 16 recebe apenas suporte de compatibilidade. Planejar a migração do banco interno do n8n para PostgreSQL 17 antes de liberar tráfego real.
 
-Roteiro proposto, **ainda não executado**: `docs/14-roteiro-migracao-postgres17.md`.
+**Resolvido em 05/10/2026:** migração executada conforme `docs/14-roteiro-migracao-postgres17.md` (ver seção "Migração para PostgreSQL 17").
 
 ## Conferência de 05/10/2026 (~17:40 UTC, somente leitura)
 
@@ -101,10 +101,40 @@ Nenhum conteúdo de chave ou do `.env` foi exibido ou versionado.
 | Snapshot manual da VPS (id 389363) | Expira em **06/10/2026 17:06 UTC**. Renovação não é indispensável (ver doc `14`, seção 15) |
 | Pasta `/opt/inforuan-staging/import` | Mantida até a conclusão do commit e da conferência. Remover só depois, com autorização |
 | Runner (`inforuan-staging-runner`) | Sem healthcheck próprio; depende do healthcheck do n8n |
-| PostgreSQL 16 | Aviso de compatibilidade do n8n. Migração para 17 proposta no doc `14` |
+| PostgreSQL 16 | **Resolvido**: migrado para 17.11 em 05/10. Volume do PG16 guardado até pelo menos 07/10/2026 18:15 UTC |
+| Avisos de configuração do n8n | `N8N_RUNNERS_ENABLED` (remover), `WEBHOOK_URL` → `N8N_WEBHOOK_URL`, e defaults que vão mudar (`N8N_RUNNERS_TASK_TIMEOUT`, limites do nó de compressão, `N8N_UNVERIFIED_PACKAGES_ENABLED`). Ajustar em etapa própria, junto com a atualização do n8n |
 | Versão do n8n (2.35.4) | Mais de 6 semanas. Avaliar atualização depois da migração do banco, em etapa própria |
 | Workflows | Ainda usam RPC HTTP com credencial `supabaseApi`. Precisam ser refeitos para o schema `api.*` via `n8n_engine` antes de qualquer ativação |
 | Compose antigo do EasyPanel | Obsoleto, arquivado em `infra/_historico/` (só referência) |
+
+## Migração para PostgreSQL 17 (05/10/2026, ~18:09–18:13 UTC)
+
+Executada com autorização, seguindo o doc `14`. Parada somente do staging do INFORUAN (~2 min).
+
+| Verificação | Resultado |
+|---|---|
+| Versão nova | PostgreSQL **17.11** (`postgres:17-alpine`), volume novo `inforuan-staging-postgres17-data` |
+| Backup | `prodrigestivill/postgres-backup-local:17` |
+| Dump final do PG16 | Feito depois da parada do n8n; 434 KB; SHA-256 `ced98f3eee7e2957177ed2570f4e93607a5a246043fb56a6c00dc7aa43dd2e55`; 126 itens `TABLE DATA` |
+| Restauração | Atômica (`--single-transaction --exit-on-error`), sem erros |
+| Contagem de linhas por tabela | **Idêntica** nas 126 tabelas (PG16 × PG17), antes e depois de ligar o n8n |
+| Usuários / workflows / credenciais | 1 / 4, todos `active = false` / 0 |
+| Migrações internas do n8n / extensões | 243 / `plpgsql`, `uuid-ossp` |
+| n8n | `healthy`, `/healthz` ok, sem erro de chave de criptografia e **sem o aviso do PG16** |
+| Mesmo `.env` e mesma chave de criptografia | Sim; o volume `inforuan-staging-n8n-data` não mudou |
+| Backup novo | `n8n_inforuan-20261005-151155.sql.gz` (horário de Brasília), gerado pelo PG 17.11 |
+| Teste de restauração do backup novo | Banco descartável `restore_test_pg17`: 126 tabelas, contagens idênticas, banco removido depois |
+| Outros serviços (`king`, `n8n` antigo, `evoltuionapi`, EasyPanel) | **OUTROS-INTACTOS**: mesma hora de início, mesmas réplicas, 0 reinícios |
+| Limites, redes e porta | Iguais aos de antes; 5679 só em `127.0.0.1`; 0 reinícios no INFORUAN |
+| Login no n8n | **OK**: feito pelo usuário pelo túnel. A tela mostra os 4 workflows inativos e 0 execuções |
+| Container de backup | Teste de saúde executado manualmente: OK. O teste automático roda a cada 5 min |
+
+Guardado no servidor, sem alteração, por **pelo menos 48 h** (até 07/10/2026 18:15 UTC). A remoção só acontece com autorização:
+
+- volume `inforuan-staging-postgres-data` (PG16);
+- pasta `/opt/inforuan-staging/migracao-pg17/` (permissão 700), com o dump final, o hash, as contagens, a cópia do compose do PG16, a cópia do `.env` (600) e as linhas de base dos outros serviços.
+
+Rollback disponível conforme o doc `14`, seção 14 (B).
 
 ## Saída da VPS compartilhada
 

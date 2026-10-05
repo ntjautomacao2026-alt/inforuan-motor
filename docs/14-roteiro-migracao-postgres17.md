@@ -1,6 +1,6 @@
 # Roteiro — migração do PostgreSQL interno do n8n (16 → 17)
 
-> **Status: PROPOSTO. NÃO EXECUTADO.** Só executar com autorização explícita.
+> **Status: EXECUTADO em 05/10/2026, com autorização.** Resultado registrado no doc `12`.
 > Escopo: **somente** o banco interno do n8n do staging (`inforuan-staging-postgres`).
 > O Supabase do motor **não** é afetado. Nenhum serviço `king`, `n8n` antigo ou `evoltuionapi` é parado, reiniciado ou alterado.
 
