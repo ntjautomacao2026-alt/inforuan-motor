@@ -1,18 +1,11 @@
 {
-  "_comment": "Copie para config.local.json e preencha. SEM SEGREDOS aqui: tokens e chaves ficam só nas credenciais do n8n.",
-  "SUPABASE_URL": "https://bsmuouivezjnfrcnamky.supabase.co",
+  "_comment": "Copie para config.local.json e preencha. SEM SEGREDOS aqui: senhas, tokens e chaves ficam só nas credenciais do n8n.",
   "WS": "inforuan",
-  "WEBHOOKS_VIA_N8N": false,
   "GG_BUSINESS_ID": "iCYZvBkyiGZxJMjcDJLGowWF3bo1",
-  "GG_WEBHOOK_PATH_SUFFIX": "trocar-por-sufixo-aleatorio-longo",
-  "EVOLUTION_BASE_URL": "https://SEU-SERVIDOR-EVOLUTION",
-  "EVOLUTION_INSTANCE": "inforuan-01",
-  "EVO_WEBHOOK_PATH_SUFFIX": "trocar-por-outro-sufixo-aleatorio-longo",
   "TELEGRAM_CHAT_ID": "-100XXXXXXXXXX",
-  "CRED_SUPABASE": "Supabase INFORUAN",
-  "CRED_GG_WEBHOOK_SECRET": "GG Webhook Secret (x-secret)",
+  "CRED_POSTGRES": "INFORUAN Supabase (n8n_engine)",
   "CRED_GG_API": "GG API (Authorization Bearer)",
-  "CRED_EVOLUTION": "Evolution INFORUAN (apikey da instância)",
   "CRED_ANTHROPIC": "Anthropic INFORUAN",
-  "CRED_TELEGRAM": "Telegram INFORUAN"
+  "CRED_TELEGRAM": "Telegram INFORUAN",
+  "CRED_IDS": { "postgres": "", "anthropic": "", "telegram": "", "gg_api": "" }
 }

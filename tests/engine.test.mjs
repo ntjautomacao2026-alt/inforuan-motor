@@ -550,3 +550,74 @@ test('0009: n8n_engine continua sem login, com limite de conexões e timeouts de
   assert.equal(r.rolconnlimit, 10);
   assert.deepEqual([...r.cfg].sort(), ['idle_in_transaction_session_timeout=60s', 'lock_timeout=5s', 'statement_timeout=15s']);
 });
+
+// ─── Etapa 4: workflows do n8n falam SÓ com a api, como n8n_engine ──────────
+const loadWorkflows = async () => {
+  await import('../n8n/build.mjs');                               // regenera n8n/dist (gitignored)
+  const { readdirSync } = await import('node:fs');
+  const d = root + 'n8n/dist/';
+  return readdirSync(d).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(d + f, 'utf8')));
+};
+// Mesma regra do nó Postgres v2.5+: expressão que devolve array; objeto → JSON.stringify.
+const n8nParams = (n, ctx = {}) => {
+  const raw = n.parameters.options?.queryReplacement;
+  if (!raw) return [];
+  const inner = raw.replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
+  const $ = (name) => ({ item: { json: ctx.nodes?.[name] ?? {} } });
+  const vals = new Function('$json', '$', `return (${inner});`)(ctx.json ?? {}, $);
+  return vals.filter((v) => v !== undefined).map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
+};
+const pgNode = (wfs, wfName, nodeName) => wfs.find((w) => w.name === wfName).nodes.find((n) => n.name === nodeName);
+
+test('Workflows: só IR-05/06/08, todos inativos, sem service_role/REST; SQL só chama funções da api', async () => {
+  const wfs = await loadWorkflows();
+  assert.deepEqual(wfs.map((w) => w.name).sort(), ['IR-05 Atendimento IA', 'IR-06 Alertas Telegram', 'IR-08 Reconciliacao GGCheckout']);
+  for (const w of wfs) {
+    assert.equal(w.active, false, w.name);
+    const txt = JSON.stringify(w);
+    assert.doesNotMatch(txt, /supabaseApi|service_role|rest\/v1|supabase\.co/i, w.name);
+    for (const n of w.nodes.filter((n) => n.type === 'n8n-nodes-base.postgres')) {
+      assert.equal(n.typeVersion, 2.7);
+      assert.equal(n.parameters.operation, 'executeQuery');
+      assert.equal(n.credentials.postgres.name, 'INFORUAN Supabase (n8n_engine)');
+      const sql = n.parameters.query;
+      assert.doesNotMatch(sql, /\{\{/, 'sem expressões dentro do SQL (só $1)');
+      for (const [, schema] of sql.matchAll(/\b([a-z_]+)\.[a-z_]+\s*\(/g)) assert.equal(schema, 'api', `${n.name}: ${sql}`);
+      for (const [, target] of sql.matchAll(/\bfrom\s+([^\s]+)/gi)) assert.match(target, /^(api\.|\(|jsonb_array_elements_text)/, `${n.name}: from ${target}`);
+    }
+  }
+});
+
+test('Workflows: cada SQL roda como n8n_engine com os parâmetros que o n8n monta', async () => {
+  const wfs = await loadWorkflows();
+  const db = await setup({ holdout: 0 });
+  await gg(db, 'pix.generated', 'W1');                             // contato real com pedido (vínculo transacional)
+  await evo(db, inbound('MSG-W1', 'Como acesso meu produto?'), 0); // conversa pendente para a IA
+  await db.query(`select raise_alert(ws_id('inforuan'), 'teste', 'info', 'alerta de teste', 'teste:1')`);
+  const contact = (await one(db, `select id from contacts where phone_e164 = $1`, [PHONE])).id;
+  const run = async (n, ctx) => { await db.exec('set role n8n_engine'); try { return (await db.query(n.parameters.query, n8nParams(n, ctx))).rows; } finally { await db.exec('reset role'); } };
+
+  const work = await run(pgNode(wfs, 'IR-05 Atendimento IA', 'Reservar conversas prontas'));
+  assert.equal(work.length, 1);
+  assert.equal(work[0].r.contact_id, contact);
+  assert.equal(work[0].r.pending[0].text, 'Como acesso meu produto?');
+
+  const rec = await run(pgNode(wfs, 'IR-05 Atendimento IA', 'Registrar e enfileirar'), { json: {
+    p_contact: contact, p_inbound_ids: work[0].r.pending.map((m) => m.id), p_decision: 'handoff', p_reply: null,
+    p_kb_slugs: [], p_handoff_reason: 'teste', p_model: 'm', p_stop_reason: 'end_turn', p_tokens_in: 10, p_tokens_out: null, p_latency_ms: 5 } });
+  assert.equal(rec[0].r.decision, 'handoff');
+  assert.equal((await one(db, `select answered_by_ai_at is not null x from messages where provider_message_id = 'MSG-W1'`)).x, true);
+
+  await run(pgNode(wfs, 'IR-06 Alertas Telegram', 'Sinal de vida do n8n'));
+  assert.equal((await one(db, `select meta->>'via' v from service_heartbeats where service = 'n8n'`)).v, 'IR-06');
+  const alerts = await run(pgNode(wfs, 'IR-06 Alertas Telegram', 'Reservar alertas'));
+  const a = alerts.find((x) => x.r.text === 'alerta de teste').r;
+  assert.equal(a.workspace_id, undefined, 'api não expõe workspace_id');
+  await run(pgNode(wfs, 'IR-06 Alertas Telegram', 'Confirmar envio'), { nodes: { 'Tem alerta?': a } });
+  assert.ok((await one(db, `select sent_at from alerts where id = $1`, [a.id])).sent_at);
+
+  const rc = await run(pgNode(wfs, 'IR-08 Reconciliacao GGCheckout', 'Reconciliar em lote'),
+    { json: { items: [{ id: 'W1', status: 'paid', paid_at: at(3) }, { id: 'NUNCA-VISTO', status: 'paid', paid_at: at(3) }] } });
+  assert.deepEqual(rc[0].r, { updated: 1, inserted: 1 });
+  assert.equal((await one(db, `select status from orders where external_id = 'W1'`)).status, 'paid');
+});
