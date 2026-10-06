@@ -91,5 +91,5 @@ Na Fase E, com o motor em **só internos**, os eventos de clientes reais chegam,
 | Codificação | A 1ª publicação foi colada com acentos corrompidos (cópia sem UTF-8; só afetava comentários e textos de log). A republicação foi copiada com `LANG=en_US.UTF-8`, idêntica ao arquivo byte a byte |
 
 **Pontos em aberto:**
-- **Reembolso:** a lista criada não tem `pix.refunded` nem `card.refunded`. Conferir se o painel oferece esses eventos e incluí-los. Hoje o IR-08 reconcilia só `status=paid`; estender para reembolsos/chargebacks antes do modo `live`.
+- **Reembolso:** confirmado no painel (print de 06/10) que a GGCheckout **não oferece** eventos de reembolso no webhook. As únicas opções desmarcadas são Quiz (Completed, Lead_captured) e Subscription (Canceled, Past_due, Renewed), que não se aplicam. A seleção atual é a definitiva. Reembolsos e chargebacks chegam por **reconciliação** (IR-08, que hoje busca só `status=paid` e **precisa ser estendido para reembolsos/chargebacks antes do modo `live`**) e por `register_manual_refund` (reembolsos fora da GGCheckout).
 - **`checkout.abandoned`:** entrou na lista. Com o motor em só internos é descartado. No `live`, um evento sem id de pagamento é ignorado (200); se trouxer id, vira `gg.unknown_event` até ser mapeado. Formato a observar no teste ponta a ponta.
