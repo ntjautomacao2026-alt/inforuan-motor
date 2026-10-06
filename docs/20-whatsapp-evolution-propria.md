@@ -140,3 +140,15 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 6. **Só com autorização:** `provider_instances.active = true` e `unpause_instance('inforuan-01', …)`.
 
 **A conferir no teste:** os nomes exatos de status no `messages.update` (o motor já mapeia `SERVER_ACK`, `DELIVERY_ACK`, `READ`, `PLAYED`, `ERROR`) e os valores de status da API da GGCheckout para reembolso e chargeback (`refunded` e `charged_back` assumidos).
+
+## 8. Execução da Fase 3 (06/10/2026, autorizada ao antecipar a janela do PG16)
+
+| Passo | Resultado |
+|---|---|
+| CA do Supabase no n8n | `NODE_EXTRA_CA_CERTS` + certificado montado só leitura. Só o n8n foi recriado. TLS até o pooler verificado de dentro do container. Outros intactos |
+| Credencial Postgres (usuário, pelo túnel) | `INFORUAN Supabase (n8n_engine)` (id `NnDvALgmSD1vcvKm`). 1ª tentativa falhou com o campo de senha vazio (pooler: "Timeout … SCRAM final"); refeita, autenticou às 14:27:33 UTC. A opção "SSH Tunnel" da credencial fica **desligada** |
+| Telefones internos (usuário, SQL Editor) | 2 números (finais 4236 e 7843), formato conferido |
+| 0011 (MCP) | Aplicada. Funções idênticas ao repositório (`ingest_evolution_event` 2d46be56…, `evo_jid_phone` 5cb82489…). `inforuan-01` inativa e pausada (2/min, 30 s, 40/dia). `api` com 11 funções; `n8n_engine` executa só a de `api` |
+| Credencial Evolution | Montada no servidor a partir do `.env` (token da instância), importada com `n8n import:credentials`, criptografada pelo n8n (id `nyL91EwaKwfgotMA`). Arquivo temporário apagado; token nunca exibido |
+| Workflows | IR-02, IR-04 e IR-07 importados **inativos**, já ligados às credenciais. IR-04 ainda sem a credencial da GGCheckout. Os 4 antigos seguem inativos (arquivar depois) |
+| Webhook global | Ligado para `http://n8n:5678/webhook/evo/<sufixo>`; URL só no `.env` e no `n8n/config.local.json`. Só 4 eventos (`MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE`, `CONNECTION_UPDATE`); os outros 26 desligados explicitamente. Só a Evolution foi recriada; a sessão continuou `open`. Os 404 no log são esperados até o IR-02 ser ativado |
