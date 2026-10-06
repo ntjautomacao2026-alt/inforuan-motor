@@ -84,10 +84,14 @@ services:
       N8N_RUNNERS_MODE: external
       N8N_RUNNERS_BROKER_LISTEN_ADDRESS: 0.0.0.0
       N8N_RUNNERS_AUTH_TOKEN: ${INFORUAN_RUNNERS_TOKEN:?defina INFORUAN_RUNNERS_TOKEN}
+      # CA pública do Supabase (pooler *.pooler.supabase.com): a credencial Postgres do n8n não tem campo de CA,
+      # então ela entra aqui. Soma uma CA à lista padrão; não desliga nenhuma verificação (doc 16/17).
+      NODE_EXTRA_CA_CERTS: /certs/supabase-prod-ca-2021.crt
     ports:
       - "127.0.0.1:5679:5678"
     volumes:
       - inforuan_n8n_data:/home/node/.n8n
+      - ./certs/supabase-prod-ca-2021.crt:/certs/supabase-prod-ca-2021.crt:ro
     networks:
       - inforuan_backend
       - inforuan_egress
