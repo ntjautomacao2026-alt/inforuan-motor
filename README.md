@@ -28,7 +28,7 @@ Núcleo **Supabase (estado, regras críticas e agendamentos via `pg_cron`) + n8n
 | `supabase/seed/0002_catalog_links.local.sql` | Links de entrega atuais (não versionar) + links públicos dos checkouts (a preencher) |
 | `n8n/build.mjs` → `n8n/dist/*.json` | Workflows importáveis (IR-05, IR-06, IR-08), todos `active=false`, só via `api.*` (credencial Postgres do `n8n_engine`) |
 | `prompts/atendimento-system.md` | Prompt do atendimento (IA limitada à base) |
-| `tests/engine.test.mjs` | 37 testes: regras críticas no Postgres real (PGlite) + o SQL de cada nó dos workflows rodando como `n8n_engine` |
+| `tests/engine.test.mjs` | 42 testes: regras críticas no Postgres real (PGlite) + o SQL de cada nó dos workflows rodando como `n8n_engine` |
 | `tests/gg-webhook.test.mjs` | 8 testes da Edge Function (HTTP + banco real) |
 | `ops/evolution-checklist.md` | (Só se o provedor escolhido for a Evolution) webhook global, instância, coexistência |
 
@@ -40,11 +40,14 @@ npm install && npm test
 ## Workflows n8n
 | WF | Gatilho | Função |
 |---|---|---|
+| IR-02 | Webhook interno (Evolution) | `api.ingest_evolution_event` (só internos: descarta não internos sem dados) |
+| IR-04 | A cada 15 s | `api.claim_outbound` → (recuperação: confere pagamento na GGCheckout) → Evolution `sendText` com token da instância → `api.mark_outbound_result` |
 | IR-05 | A cada 10 s | `api.claim_ai_work` (debounce 20 s) → Claude (saída JSON validada) → `api.record_ai_result` (resposta ou handoff) |
 | IR-06 | A cada 30 s | `api.heartbeat` (sinal de vida do n8n) + `api.claim_alerts` → Telegram → `api.mark_alert_sent` |
-| IR-08 | A cada 5 min | API da GGCheckout (pagos nas últimas 2 h, só id/status) → `api.reconcile_gg_batch` |
+| IR-07 | A cada 60 s | Estado da conexão da Evolution → `api.set_instance_state` (pausa automática) |
+| IR-08 | A cada 5 min | API da GGCheckout (pagos em 2 h + reembolsos/chargebacks em 30 dias, só id/status) → `api.reconcile_gg_batch` |
 
-Aposentados em 05/10/2026: **IR-03** e a parte de banco do **IR-07** rodam no `pg_cron` (0008); **IR-01/IR-02** viram Edge Function; **IR-04** (envio) e o health check da instância voltam quando o provedor de WhatsApp for escolhido.
+Aposentados em 05/10/2026: **IR-03** e a parte de banco do antigo IR-07 rodam no `pg_cron` (0008); **IR-01** virou a Edge Function `gg-webhook`. WhatsApp: Evolution própria (doc 20).
 
 ### Credenciais no n8n (criar com estes nomes; nenhum valor fica em arquivo)
 | Nome | Tipo | Conteúdo |
@@ -53,6 +56,7 @@ Aposentados em 05/10/2026: **IR-03** e a parte de banco do **IR-07** rodam no `p
 | GG API (Authorization Bearer) | Header Auth | nome `Authorization`, valor `Bearer ggck_live_…` (chave gerada só para o n8n) |
 | Anthropic INFORUAN | Anthropic API | chave da API |
 | Telegram INFORUAN | Telegram API | token do bot |
+| Evolution INFORUAN (token da instância) | Header Auth | nome `apikey`, valor = **token da instância `inforuan-01`** (no `.env` do servidor; nunca a chave global) |
 
 ## Implantação (ordem)
 1. **Supabase** (`bsmuouivezjnfrcnamky`): `0001`–`0006` + `seed/0001` **já aplicados em 02/10/2026** (0006 via SQL Editor); `0007` (MCP), `0008` (SQL Editor) e `0009` (MCP) **aplicados em 05/10/2026**; login do `n8n_engine` liberado (doc 16). Falta `seed/0002 (local)`.

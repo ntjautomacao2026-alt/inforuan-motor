@@ -118,3 +118,25 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 | Dados | Banco da Evolution: 0 mensagens, 0 contatos, 0 chats, 1 instância. Webhook desligado: **nada flui para o motor e nada sai** |
 
 **Próximo:** aquecer o número com uso normal. A Fase 3 vem junto com a Etapa 4, depois de 07/10 18:15 UTC.
+
+## 7. Fase 3: preparada no repositório (06/10/2026), NÃO aplicada nem importada
+
+| Peça | Arquivo | O que faz |
+|---|---|---|
+| **0011** | `supabase/migrations/0011_whatsapp_evolution.sql` | `inforuan-01` no motor **inativa e pausada** (2/min, 30 s, 40/dia), para o vigia não alertar antes do IR-07. `api.ingest_evolution_event($1::jsonb)`: confere a instância, remove o token, aceita só `messages.upsert`, `send.message`, `messages.update` e `connection.update`, deduplica e processa na hora. **Só internos:** mensagens **e status** de não internos são descartados sem telefone nem texto (fica só a contagem `evo.ignored_internal_only`); conexão sempre passa |
+| **IR-02** | `n8n/build.mjs` | Webhook **interno** `evo/<sufixo aleatório>` → `api.ingest_evolution_event`. Não guarda execuções |
+| **IR-04** | `n8n/build.mjs` | Reserva 1 mensagem → só recuperação consulta o pagamento na GGCheckout (pagou → reconcilia e cancela) → `sendText` em `http://evolution:8080` com o **token da instância** → classifica → `api.mark_outbound_result`. Não guarda execuções |
+| **IR-07** | `n8n/build.mjs` | Estado da conexão a cada 60 s → `api.set_instance_state` (pausa automática se cair) |
+| **IR-08** | `n8n/build.mjs` | Estendido: pagos (2 h) + **reembolsados e chargebacks (30 dias)**, porque a GGCheckout não manda reembolso no webhook |
+
+**Testes: 51/51.** Inclui a 0011 (5 cenários) e o SQL de cada nó do IR-02, IR-04 e IR-07 rodando como `n8n_engine`.
+
+**Execução (depois de 07/10 18:15 UTC, cada passo com autorização):**
+1. Aplicar a 0011.
+2. Criar a credencial "Evolution INFORUAN (token da instância)" no n8n a partir do `.env` do servidor, sem exibir.
+3. Importar o IR-02, IR-04 e IR-07 inativos, junto com a Etapa 4.
+4. Ligar o webhook global da Evolution para `http://n8n:5678/webhook/evo/<sufixo>` (só o container da Evolution é recriado).
+5. Testes internos.
+6. **Só com autorização:** `provider_instances.active = true` e `unpause_instance('inforuan-01', …)`.
+
+**A conferir no teste:** os nomes exatos de status no `messages.update` (o motor já mapeia `SERVER_ACK`, `DELIVERY_ACK`, `READ`, `PLAYED`, `ERROR`) e os valores de status da API da GGCheckout para reembolso e chargeback (`refunded` e `charged_back` assumidos).

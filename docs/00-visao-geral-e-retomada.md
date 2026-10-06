@@ -114,7 +114,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `17` | Etapa 4: workflows só pela `api` (preparado no repositório; importação depois de 07/10) |
 | `18` | Etapa 7: Edge Function `gg-webhook` publicada, testada e **webhook da GGCheckout criado** em 06/10 (só internos: clientes reais descartados) |
 | `19` | Provedor de WhatsApp: comparação, custos e recomendação (API oficial = evolução futura) |
-| `20` | WhatsApp via Evolution própria (sessão Web): Fases 1–2 concluídas (número conectado em 06/10); Fase 3 pendente |
+| `20` | WhatsApp via Evolution própria (sessão Web): Fases 1–2 concluídas (número conectado em 06/10); Fase 3 preparada (0011 + IR-02/04/07), não aplicada |
 
 ---
 

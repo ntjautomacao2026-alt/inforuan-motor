@@ -10,7 +10,7 @@ import { handleGgWebhook } from '../supabase/functions/gg-webhook/handler.ts';
 const root = new URL('..', import.meta.url).pathname;
 const FILES = ['migrations/0001_core.sql', 'migrations/0002_functions.sql', 'migrations/0003_views.sql', 'migrations/0004_hardening.sql',
   'migrations/0005_fk_indexes.sql', 'migrations/0006_api_interface.sql', 'seed/0001_config.sql', 'migrations/0007_modo_interno.sql',
-  'migrations/0009_n8n_engine_limites.sql', 'migrations/0010_ingestao_gg.sql'].map((f) => readFileSync(root + 'supabase/' + f, 'utf8'));
+  'migrations/0009_n8n_engine_limites.sql', 'migrations/0010_ingestao_gg.sql', 'migrations/0011_whatsapp_evolution.sql'].map((f) => readFileSync(root + 'supabase/' + f, 'utf8'));
 
 const SECRET = 'segredo-de-teste-com-mais-de-24-caracteres';
 const INTERNAL = '+5511900000001';

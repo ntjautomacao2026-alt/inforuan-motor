@@ -5,11 +5,12 @@
 // (pooler do Supabase em modo sessão, TLS verificado; doc 16). Nada de service_role, REST ou tabelas.
 // Cada chamada recebe no máximo UM parâmetro ($1::jsonb), desmontado dentro do SQL.
 //
-// Fora daqui (decisão 05/10/2026):
+// Fora daqui:
 //   • IR-03 Motor e a parte de banco do IR-07 → pg_cron no próprio Supabase (0008);
-//   • IR-01/IR-02 (webhooks) → Edge Function do Supabase (Etapa 7);
-//   • IR-04 Envio e o health check da instância → só quando o provedor de WhatsApp for escolhido.
-//     Até lá, o envio de teste é o provedor `simulated` dentro do banco (0007).
+//   • IR-01 (webhook da GGCheckout) → Edge Function gg-webhook (Etapa 7).
+// WhatsApp (doc 20, Fase 3): Evolution PRÓPRIA na rede interna do staging. IR-02 recebe os eventos pelo webhook
+// global da Evolution (rede interna, sem porta pública) → api.ingest_evolution_event; IR-04 envia; IR-07 vigia a conexão.
+// A Evolution só é chamada com o TOKEN DA INSTÂNCIA (credencial Header Auth `apikey`), nunca com a chave global.
 import { readFileSync, writeFileSync, mkdirSync, existsSync, readdirSync, rmSync } from 'node:fs';
 import { randomUUID } from 'node:crypto';
 
@@ -19,6 +20,9 @@ const C = JSON.parse(readFileSync(dir + cfgFile, 'utf8'));
 const SYSTEM_PROMPT = readFileSync(dir + '../prompts/atendimento-system.md', 'utf8');
 if (!/^[a-z0-9_-]+$/.test(C.WS)) throw new Error('WS inválido no config');
 const WS_SQL = `'${C.WS}'`;   // seguro: validado acima
+if (!/^[a-z0-9_-]+$/.test(C.EVOLUTION_INSTANCE)) throw new Error('EVOLUTION_INSTANCE inválido no config');
+if (!/^[A-Za-z0-9_-]{16,}$/.test(C.EVO_WEBHOOK_PATH_SUFFIX)) throw new Error('EVO_WEBHOOK_PATH_SUFFIX: use 16+ caracteres aleatórios');
+const INST_SQL = `'${C.EVOLUTION_INSTANCE}'`;   // seguro: validado acima
 // Ids das credenciais no n8n (não são segredo). Opcional: preenchidos em config.local.json depois que a credencial existir,
 // para o workflow já nascer ligado a ela. Vazio = escolher a credencial no editor.
 const credId = (k) => C.CRED_IDS?.[k] ?? '';
@@ -67,6 +71,19 @@ from (select $1::jsonb as j) as p`,
   markAlertSent: `select api.mark_alert_sent((($1::jsonb) ->> 'id')::bigint)`,
   heartbeat: `select api.heartbeat('n8n', jsonb_build_object('via', 'IR-06'))`,
   reconcileBatch: `select api.reconcile_gg_batch($1::jsonb, ${WS_SQL}) as r`,
+  ingestEvolution: `select api.ingest_evolution_event($1::jsonb) as r`,
+  claimOutbound: `select r from api.claim_outbound(${INST_SQL}, 1) as r`,
+  cancelOutbound: `select api.cancel_outbound(((($1::jsonb) ->> 'id'))::uuid, 'paid_precheck')`,
+  markOutboundResult: `
+select api.mark_outbound_result(
+  (j ->> 'p_id')::uuid,
+  (j ->> 'p_ok')::boolean,
+  j ->> 'p_provider_message_id',
+  j ->> 'p_error_code',
+  coalesce((j ->> 'p_retryable')::boolean, false),
+  coalesce((j ->> 'p_uncertain')::boolean, false)) as r
+from (select $1::jsonb as j) as p`,
+  setInstanceState: `select api.set_instance_state(j ->> 'p_instance', j ->> 'p_state') from (select $1::jsonb as j) as p`,
 };
 
 function wf(name, nodes, links, { sensitive = false } = {}) {
@@ -191,28 +208,132 @@ wf('IR-06 Alertas Telegram', [
   ['Reservar alertas', 'Tem alerta?'], ['Tem alerta?', 'Telegram'], ['Telegram', 'Confirmar envio'],
 ]);
 
-// ─── IR-08 Reconciliação GGCheckout ─────────────────────────────────────────
+// ─── IR-08 Reconciliação GGCheckout (pagos nas últimas 2 h + reembolsos/chargebacks nos últimos 30 dias) ───
+// A GGCheckout não oferece eventos de reembolso no webhook (confirmado 06/10): a reconciliação é o único caminho automático.
 x = 0;
 wf('IR-08 Reconciliacao GGCheckout', [
   schedule('A cada 5 min', 300),
-  node('GG: pagamentos pagos (2h)', 'n8n-nodes-base.httpRequest', 4.2, {
+  code('Consultas', `return [
+  { json: { status: 'paid', from: new Date(Date.now() - 2 * 3600e3).toISOString() } },
+  { json: { status: 'refunded', from: new Date(Date.now() - 30 * 86400e3).toISOString() } },
+  { json: { status: 'charged_back', from: new Date(Date.now() - 30 * 86400e3).toISOString() } },
+];`),
+  node('GG: pagamentos por status', 'n8n-nodes-base.httpRequest', 4.2, {
     method: 'GET', url: `https://ggcheckout.app/api/get-clients/business/${C.GG_BUSINESS_ID}/payments/paginated`,
     authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
     sendQuery: true,
     queryParameters: { parameters: [
-      { name: 'pageSize', value: '100' }, { name: 'status', value: 'paid' },
-      { name: 'dateFrom', value: '={{ new Date(Date.now() - 2*3600e3).toISOString() }}' },
+      { name: 'pageSize', value: '100' }, { name: 'status', value: '={{ $json.status }}' }, { name: 'dateFrom', value: '={{ $json.from }}' },
     ] },
     options: { timeout: 20000 },
   }, { credentials: { httpHeaderAuth: { id: credId('gg_api'), name: C.CRED_GG_API } } }),
   code('Só id e status (a API mascara dados pessoais)', `
-const pays = $json.payments || [];
-if (!pays.length) return [];
-return [{ json: { items: pays.map((p) => ({ id: p.id, status: p.status, paid_at: p.sellerNotifications?.paidAt || p.updatedAt })) } }];`),
+const items = [];
+for (const it of $input.all()) for (const p of (it.json.payments || []))
+  items.push({ id: p.id, status: p.status, paid_at: p.sellerNotifications?.paidAt || p.updatedAt });
+if (!items.length) return [];
+return [{ json: { items } }];`),
   api('Reconciliar em lote', SQL.reconcileBatch, '$json.items'),
 ], [
-  ['A cada 5 min', 'GG: pagamentos pagos (2h)'], ['GG: pagamentos pagos (2h)', 'Só id e status (a API mascara dados pessoais)'],
+  ['A cada 5 min', 'Consultas'], ['Consultas', 'GG: pagamentos por status'],
+  ['GG: pagamentos por status', 'Só id e status (a API mascara dados pessoais)'],
   ['Só id e status (a API mascara dados pessoais)', 'Reconciliar em lote'],
 ]);
 
-console.log(`workflows gerados em n8n/dist a partir de ${cfgFile} (todos inativos): IR-05, IR-06, IR-08`);
+// ─── IR-02 Entrada WhatsApp (Evolution → motor), rede interna ───────────────
+// URL interna: http://n8n:5678/webhook/evo/<sufixo aleatório> (só a rede Docker do staging alcança; sem porta pública).
+x = 0;
+wf('IR-02 Entrada WhatsApp', [
+  node('Webhook Evolution (interno)', 'n8n-nodes-base.webhook', 2, {
+    httpMethod: 'POST', path: `evo/${C.EVO_WEBHOOK_PATH_SUFFIX}`, responseMode: 'onReceived', options: {},
+  }, { webhookId: randomUUID() }),
+  api('Entregar ao motor', SQL.ingestEvolution, '$json.body'),
+], [['Webhook Evolution (interno)', 'Entregar ao motor']], { sensitive: true });
+
+// ─── IR-04 Envio WhatsApp (camada única) ────────────────────────────────────
+// Reserva UMA mensagem por execução (limites, pausa, guard, TTL e modo só internos ficam no banco).
+// Recuperação com pedido → confere o pagamento na GGCheckout antes de enviar (falha da API não bloqueia).
+x = 0;
+const EVO_HEADERS = { credentials: { httpHeaderAuth: { id: credId('evolution'), name: C.CRED_EVOLUTION } } };
+const ifTrue = (name, expr) => node(name, 'n8n-nodes-base.if', 2, {
+  conditions: { options: { caseSensitive: true, leftValue: '', typeValidation: 'loose' },
+    conditions: [{ id: randomUUID(), leftValue: expr, rightValue: true, operator: { type: 'boolean', operation: 'true', singleValue: true } }],
+    combinator: 'and' },
+  options: {},
+});
+const MSG = "$('Mensagem reservada').first().json";
+wf('IR-04 Envio WhatsApp', [
+  schedule('A cada 15s', 15),
+  api('Reservar próxima mensagem', SQL.claimOutbound),
+  code('Mensagem reservada', `return $input.all().filter((it) => it.json.r?.id && it.json.r?.to_phone_e164).slice(0, 1)
+  .map((it) => ({ json: { ...it.json.r, _precheck: it.json.r.purpose === 'recovery' && !!it.json.r.guard?.order_external_id, _paid: false } }));`),
+  ifTrue('Precisa checar pagamento?', '={{ $json._precheck }}'),
+  node('Checar pagamento na GGCheckout', 'n8n-nodes-base.httpRequest', 4.2, {
+    method: 'GET',
+    url: `=https://ggcheckout.app/api/get-clients/business/${C.GG_BUSINESS_ID}/payments/{{ encodeURIComponent($json.guard.order_external_id) }}`,
+    authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
+    options: { timeout: 10000, response: { response: { neverError: true, fullResponse: true } } },
+  }, { credentials: { httpHeaderAuth: { id: credId('gg_api'), name: C.CRED_GG_API } }, onError: 'continueRegularOutput' }),
+  code('Decidir após checagem', `
+const msg = ${MSG};
+const it = $input.first().json || {};
+const pay = (it.body || {}).payment || it.body || {};
+const status = String(pay.status || '').toLowerCase();
+// falha da API NÃO bloqueia: o guard do banco já passou (o pagamento por webhook é a proteção principal)
+return [{ json: { ...msg, _paid: it.statusCode === 200 && ['paid','refunded','chargeback','charged_back'].includes(status) } }];`),
+  ifTrue('Já pagou?', '={{ $json._paid }}'),
+  api('Registrar pagamento (reconciliação)', SQL.reconcileBatch, `[{ id: ${MSG}.guard.order_external_id, status: 'paid' }]`),
+  api('Cancelar mensagem', SQL.cancelOutbound, `{ id: ${MSG}.id }`),
+  node('Evolution: enviar texto', 'n8n-nodes-base.httpRequest', 4.2, {
+    method: 'POST',
+    url: `${C.EVOLUTION_BASE_URL}/message/sendText/${C.EVOLUTION_INSTANCE}`,
+    authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
+    sendBody: true, specifyBody: 'json',
+    jsonBody: `={{ JSON.stringify({ number: $json.to_phone_e164.replace('+', ''), text: $json.rendered_body, linkPreview: true }) }}`,
+    options: { timeout: 25000, response: { response: { neverError: true, fullResponse: true } } },
+  }, { ...EVO_HEADERS, onError: 'continueErrorOutput' }),
+  code('Classificar resultado', `
+const it = $input.first().json || {};
+const code = it.statusCode;
+const body = it.body || {};
+const pmid = body?.key?.id || body?.message?.key?.id || null;
+const text = JSON.stringify(body).toLowerCase();
+let r = { p_ok: false, p_retryable: true, p_uncertain: false, p_error_code: String(code) };
+if (code >= 200 && code < 300 && pmid) r = { p_ok: true, p_provider_message_id: pmid };
+else if (code >= 200 && code < 300) r = { p_ok: false, p_retryable: true, p_uncertain: true, p_error_code: 'no_id' };
+else if (code === 400 && /exists.{0,5}false|not.?exist|invalid/.test(text)) r = { p_ok: false, p_retryable: false, p_error_code: 'invalid_number' };
+else if (code === 401 || code === 403 || code === 404) r = { p_ok: false, p_retryable: true, p_error_code: 'auth_or_instance_' + code };
+return [{ json: { p_id: ${MSG}.id, ...r } }];`),
+  code('Timeout → incerto', `return [{ json: { p_id: ${MSG}.id, p_ok: false, p_retryable: true, p_uncertain: true, p_error_code: 'timeout_or_network' } }];`),
+  api('Registrar resultado', SQL.markOutboundResult, '$json'),
+], [
+  ['A cada 15s', 'Reservar próxima mensagem'], ['Reservar próxima mensagem', 'Mensagem reservada'],
+  ['Mensagem reservada', 'Precisa checar pagamento?'],
+  ['Precisa checar pagamento?', 'Checar pagamento na GGCheckout', 0], ['Precisa checar pagamento?', 'Já pagou?', 1],
+  ['Checar pagamento na GGCheckout', 'Decidir após checagem'], ['Decidir após checagem', 'Já pagou?'],
+  ['Já pagou?', 'Registrar pagamento (reconciliação)', 0], ['Registrar pagamento (reconciliação)', 'Cancelar mensagem'],
+  ['Já pagou?', 'Evolution: enviar texto', 1],
+  ['Evolution: enviar texto', 'Classificar resultado', 0], ['Evolution: enviar texto', 'Timeout → incerto', 1],
+  ['Classificar resultado', 'Registrar resultado'], ['Timeout → incerto', 'Registrar resultado'],
+], { sensitive: true });
+
+// ─── IR-07 Saúde da conexão (a parte de banco do antigo IR-07 roda no pg_cron) ─
+x = 0;
+wf('IR-07 Saude da conexao', [
+  schedule('A cada 60s', 60),
+  node('Evolution: estado da conexão', 'n8n-nodes-base.httpRequest', 4.2, {
+    method: 'GET', url: `${C.EVOLUTION_BASE_URL}/instance/connectionState/${C.EVOLUTION_INSTANCE}`,
+    authentication: 'genericCredentialType', genericAuthType: 'httpHeaderAuth',
+    options: { timeout: 10000, response: { response: { neverError: true, fullResponse: true } } },
+  }, { ...EVO_HEADERS, onError: 'continueRegularOutput' }),
+  code('Normalizar estado', `
+const r = $json || {};
+const st = r.statusCode === 200 ? (r.body?.instance?.state || r.body?.state || 'unknown') : 'unreachable';
+return [{ json: { p_instance: ${JSON.stringify(C.EVOLUTION_INSTANCE)}, p_state: st } }];`),
+  api('Atualizar estado (pausa automática)', SQL.setInstanceState, '$json'),
+], [
+  ['A cada 60s', 'Evolution: estado da conexão'], ['Evolution: estado da conexão', 'Normalizar estado'],
+  ['Normalizar estado', 'Atualizar estado (pausa automática)'],
+]);
+
+console.log(`workflows gerados em n8n/dist a partir de ${cfgFile} (todos inativos): IR-02, IR-04, IR-05, IR-06, IR-07, IR-08`);

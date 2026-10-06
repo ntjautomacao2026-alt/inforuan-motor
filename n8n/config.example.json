@@ -3,9 +3,19 @@
   "WS": "inforuan",
   "GG_BUSINESS_ID": "iCYZvBkyiGZxJMjcDJLGowWF3bo1",
   "TELEGRAM_CHAT_ID": "-100XXXXXXXXXX",
+  "EVOLUTION_BASE_URL": "http://evolution:8080",
+  "EVOLUTION_INSTANCE": "inforuan-01",
+  "EVO_WEBHOOK_PATH_SUFFIX": "trocarPorSufixoAleatorioDe24Caracteres",
   "CRED_POSTGRES": "INFORUAN Supabase (n8n_engine)",
   "CRED_GG_API": "GG API (Authorization Bearer)",
   "CRED_ANTHROPIC": "Anthropic INFORUAN",
   "CRED_TELEGRAM": "Telegram INFORUAN",
-  "CRED_IDS": { "postgres": "", "anthropic": "", "telegram": "", "gg_api": "" }
+  "CRED_EVOLUTION": "Evolution INFORUAN (token da instância)",
+  "CRED_IDS": {
+    "postgres": "",
+    "anthropic": "",
+    "telegram": "",
+    "gg_api": "",
+    "evolution": ""
+  }
 }

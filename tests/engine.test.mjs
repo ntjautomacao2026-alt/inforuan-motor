@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -21,7 +21,9 @@ async function setup({ holdout = 10, mode = 'live' } = {}) {
     update sequences set active = true;
     update experiments set holdout_pct = ${holdout}, salt = 'salt-fixo-de-teste';
     insert into provider_instances(workspace_id, provider, instance_name, state, paused, pause_reason, rate_per_minute, min_gap_seconds, daily_cap, last_health_check_at)
-      values (ws_id('inforuan'), 'evolution', 'inforuan-01', 'open', false, null, 4, 12, 150, now());
+      values (ws_id('inforuan'), 'evolution', 'inforuan-01', 'open', false, null, 4, 12, 150, now())
+      on conflict (instance_name) do update set state = 'open', paused = false, pause_reason = null, active = true,
+        rate_per_minute = 4, min_gap_seconds = 12, daily_cap = 150, last_health_check_at = now();
     update catalog_products set access_url = 'https://drive.example/acesso-' || external_product_id;
     update catalog_checkouts set public_url = 'https://pay.example/' || external_checkout_id;
     update settings set value = '["${INTERNAL}"]' where key = 'internal_test_phones';
@@ -563,15 +565,16 @@ const n8nParams = (n, ctx = {}) => {
   const raw = n.parameters.options?.queryReplacement;
   if (!raw) return [];
   const inner = raw.replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
-  const $ = (name) => ({ item: { json: ctx.nodes?.[name] ?? {} } });
+  const $ = (name) => ({ item: { json: ctx.nodes?.[name] ?? {} }, first: () => ({ json: ctx.nodes?.[name] ?? {} }) });
   const vals = new Function('$json', '$', `return (${inner});`)(ctx.json ?? {}, $);
   return vals.filter((v) => v !== undefined).map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
 };
 const pgNode = (wfs, wfName, nodeName) => wfs.find((w) => w.name === wfName).nodes.find((n) => n.name === nodeName);
 
-test('Workflows: só IR-05/06/08, todos inativos, sem service_role/REST; SQL só chama funções da api', async () => {
+test('Workflows: IR-02/04/05/06/07/08, todos inativos, sem service_role/REST; SQL só chama funções da api', async () => {
   const wfs = await loadWorkflows();
-  assert.deepEqual(wfs.map((w) => w.name).sort(), ['IR-05 Atendimento IA', 'IR-06 Alertas Telegram', 'IR-08 Reconciliacao GGCheckout']);
+  assert.deepEqual(wfs.map((w) => w.name).sort(), ['IR-02 Entrada WhatsApp', 'IR-04 Envio WhatsApp', 'IR-05 Atendimento IA',
+    'IR-06 Alertas Telegram', 'IR-07 Saude da conexao', 'IR-08 Reconciliacao GGCheckout']);
   for (const w of wfs) {
     assert.equal(w.active, false, w.name);
     const txt = JSON.stringify(w);
@@ -620,4 +623,110 @@ test('Workflows: cada SQL roda como n8n_engine com os parâmetros que o n8n mont
     { json: { items: [{ id: 'W1', status: 'paid', paid_at: at(3) }, { id: 'NUNCA-VISTO', status: 'paid', paid_at: at(3) }] } });
   assert.deepEqual(rc[0].r, { updated: 1, inserted: 1 });
   assert.equal((await one(db, `select status from orders where external_id = 'W1'`)).status, 'paid');
+});
+
+// ─── 0011: entrada da Evolution (api.ingest_evolution_event) ────────────────
+const evoApi = async (db, payload) => {
+  await db.exec('set role n8n_engine');
+  try { return (await one(db, `select api.ingest_evolution_event($1::jsonb) r`, [JSON.stringify(payload)])).r; }
+  finally { await db.exec('reset role'); }
+};
+const statusUpd = (keyId, phone, status) => ({ event: 'messages.update', instance: 'inforuan-01',
+  data: { keyId, remoteJid: phone.replace('+', '') + '@s.whatsapp.net', fromMe: true, status } });
+
+test('0011: instância inforuan-01 nasce inativa e pausada, com limites de aquecimento', async () => {
+  const db = new PGlite();
+  for (const s of SQL) await db.exec(s);
+  const i = await one(db, `select provider, active, paused, pause_reason, rate_per_minute, min_gap_seconds, daily_cap from provider_instances where instance_name = 'inforuan-01'`);
+  assert.deepEqual(i, { provider: 'evolution', active: false, paused: true, pause_reason: 'not_activated', rate_per_minute: 2, min_gap_seconds: 30, daily_cap: 40 });
+  await db.query(`select watchdog('inforuan', $1)`, [at(0)]);
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'health_stale'`)).n, 0, 'inativa: vigia não alerta');
+});
+
+test('0011 só internos: mensagem e status de não interno descartados sem dado pessoal; interno entra; token removido', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  const r1 = await evoApi(db, { ...inbound('M-REAL', 'Oi, quero saber do meu pedido'), apikey: 'NUNCA-GRAVAR' });
+  assert.deepEqual(r1, { accepted: false, reason: 'internal_only' });
+  assert.equal((await evoApi(db, statusUpd('S-REAL', PHONE, 'READ'))).reason, 'internal_only');
+  assert.equal((await one(db, `select count(*)::int n from webhook_inbox`)).n, 0);
+  assert.equal((await one(db, `select count(*)::int n from contacts`)).n, 0);
+  assert.equal((await one(db, `select count(*)::int n from message_status_events`)).n, 0);
+  const ev = await all(db, `select payload from events where type = 'evo.ignored_internal_only' order by id`);
+  assert.deepEqual(ev.map((e) => e.payload), [{ event: 'messages.upsert' }, { event: 'messages.update' }]);
+
+  const r2 = await evoApi(db, { ...inbound('M-INT', 'teste interno', { phone: INTERNAL }), apikey: 'NUNCA-GRAVAR' });
+  assert.deepEqual(r2, { accepted: true, duplicate: false });
+  assert.deepEqual(await evoApi(db, inbound('M-INT', 'teste interno', { phone: INTERNAL })), { accepted: true, duplicate: true });
+  const msg = await one(db, `select m.text, c.phone_e164 from messages m join contacts c on c.id = m.contact_id`);
+  assert.deepEqual(msg, { text: 'teste interno', phone_e164: INTERNAL });
+  assert.equal((await one(db, `select count(*)::int n from webhook_inbox where payload ? 'apikey'`)).n, 0, 'token nunca gravado');
+  assert.equal((await one(db, `select count(*)::int n from webhook_inbox where processed_at is null`)).n, 0, 'processado na hora');
+});
+
+test('0011: instância errada e eventos inúteis recusados; conexão sempre passa e atualiza o estado; live aceita cliente real', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  assert.equal((await evoApi(db, { ...inbound('X', 'oi'), instance: 'outra-instancia' })).reason, 'wrong_instance');
+  assert.equal((await evoApi(db, { event: 'qrcode.updated', instance: 'inforuan-01', data: {} })).reason, 'ignored_event');
+  assert.equal((await evoApi(db, { event: 'contacts.upsert', instance: 'inforuan-01', data: [{ id: '5511@s.whatsapp.net' }] })).reason, 'ignored_event');
+  assert.equal((await one(db, `select count(*)::int n from webhook_inbox`)).n, 0);
+  const c = await evoApi(db, { event: 'connection.update', instance: 'inforuan-01', data: { state: 'close' } });
+  assert.equal(c.accepted, true);
+  assert.equal((await one(db, `select state, paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`)).state, 'close');
+  assert.ok(await one(db, `select 1 x from alerts where kind = 'instance_disconnected'`), 'queda de conexão alerta');
+  await db.exec(`update settings set value = '"live"' where key = 'engine_mode'`);
+  assert.equal((await evoApi(db, inbound('M-LIVE', 'oi'))).accepted, true);
+  assert.ok(await one(db, `select 1 x from contacts where phone_e164 = $1`, [PHONE]));
+});
+
+test('0011: status de envio do motor (interno) é registrado; n8n_engine não chama as funções internas', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  await gg(db, 'pix.generated', 'I1', { phone: INTERNAL });
+  await dispatch(db, 6);
+  const [m] = await claim(db, 6);
+  await sendOk(db, m.id, 'PM-INT-1', 6);
+  assert.equal((await evoApi(db, statusUpd('PM-INT-1', INTERNAL, 'DELIVERY_ACK'))).accepted, true);
+  assert.equal((await one(db, `select status from outbound_messages where id = $1`, [m.id])).status, 'delivered');
+  await db.exec('set role n8n_engine');
+  await assert.rejects(db.query(`select public.process_evolution_payload(ws_id('inforuan'), 1, '{}'::jsonb)`), /permission denied/);
+  await assert.rejects(db.query(`select public.evo_jid_phone('x')`), /permission denied/);
+  await db.exec('reset role');
+});
+
+test('Workflows WhatsApp: IR-02/04/07 rodam como n8n_engine; Evolution só com token da instância e pela rede interna', async () => {
+  const wfs = await loadWorkflows();
+  const all4 = JSON.stringify(wfs.find((w) => w.name === 'IR-04 Envio WhatsApp'));
+  assert.match(all4, /http:\/\/evolution:8080\/message\/sendText\/inforuan-01/);
+  for (const w of wfs) for (const n of w.nodes.filter((n) => /evolution:8080/.test(JSON.stringify(n.parameters))))
+    assert.equal(n.credentials?.httpHeaderAuth?.name, 'Evolution INFORUAN (token da instância)', `${w.name}/${n.name}`);
+  const ir02 = wfs.find((w) => w.name === 'IR-02 Entrada WhatsApp');
+  assert.equal(ir02.settings.saveDataErrorExecution, 'none', 'IR-02 não guarda execução (mensagens de clientes)');
+  assert.equal(wfs.find((w) => w.name === 'IR-04 Envio WhatsApp').settings.saveDataErrorExecution, 'none');
+
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  const run = async (wf, nodeName, ctx) => { await db.exec('set role n8n_engine'); try { const n = pgNode(wfs, wf, nodeName); return (await db.query(n.parameters.query, n8nParams(n, ctx))).rows; } finally { await db.exec('reset role'); } };
+
+  // IR-02: entrega um evento de mensagem interna ao motor
+  const r = await run('IR-02 Entrada WhatsApp', 'Entregar ao motor', { json: { body: inbound('W-INT', 'oi, teste', { phone: INTERNAL }) } });
+  assert.deepEqual(r[0].r, { accepted: true, duplicate: false });
+
+  // IR-04: reserva → (pagou na checagem) reconcilia + cancela; (não pagou) registra resultado
+  await gg(db, 'pix.generated', 'W4', { phone: INTERNAL });
+  await db.query(`update scheduled_actions set due_at = now() - interval '1 minute' where status = 'pending' and due_at = (select min(due_at) from scheduled_actions)`);
+  await db.query(`select dispatch_due_actions('inforuan', 100)`);
+  await db.query(`update outbound_messages set next_attempt_at = now() - interval '1 minute', ttl_at = now() + interval '1 hour', queued_at = now()`);
+  const [c] = await run('IR-04 Envio WhatsApp', 'Reservar próxima mensagem');
+  assert.equal(c.r.to_phone_e164, INTERNAL);
+  assert.equal(c.r.guard.order_external_id, 'W4');
+  const res = await run('IR-04 Envio WhatsApp', 'Registrar resultado', { json: { p_id: c.r.id, p_ok: true, p_provider_message_id: 'EVO-1' } });
+  assert.equal(res[0].r, 'sent');
+  await run('IR-04 Envio WhatsApp', 'Registrar pagamento (reconciliação)', { nodes: { 'Mensagem reservada': c.r } });
+  assert.equal((await one(db, `select status from orders where external_id = 'W4'`)).status, 'paid');
+  await db.query(`update outbound_messages set status = 'sending' where id = $1`, [c.r.id]);
+  await run('IR-04 Envio WhatsApp', 'Cancelar mensagem', { nodes: { 'Mensagem reservada': c.r } });
+  assert.equal((await one(db, `select status_reason from outbound_messages where id = $1`, [c.r.id])).status_reason, 'paid_precheck');
+
+  // IR-07: estado da conexão
+  await run('IR-07 Saude da conexao', 'Atualizar estado (pausa automática)', { json: { p_instance: 'inforuan-01', p_state: 'close' } });
+  assert.deepEqual(await one(db, `select state, paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`),
+    { state: 'close', paused: true, pause_reason: 'disconnected' });
 });
