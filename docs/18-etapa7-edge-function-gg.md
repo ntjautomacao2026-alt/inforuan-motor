@@ -76,4 +76,20 @@ Na Fase E, com o motor em **só internos**, os eventos de clientes reais chegam,
 | Banco depois do teste | 0 linhas na inbox, 0 pedidos, 0 contatos, 0 alertas. Só **2 eventos** `gg.ignored_internal_only` com `{event, checkout_id}`, sem dado pessoal. 0 falhas do `pg_cron` |
 | Logs da função | Só status e tipo de evento (`gg-webhook 401`, `gg-webhook 200 ignorado (só internos) pix.generated`). Sem corpo, telefone, e-mail ou segredo |
 
-**Falta só a Fase E** (criar o webhook no painel da GGCheckout), com autorização própria.
+**Fase E concluída em 06/10/2026** (seção 6).
+
+## 6. Fase E: webhook criado na GGCheckout (06/10/2026, com autorização; operação de vendas desligada no dia)
+
+| Item | Resultado |
+|---|---|
+| Webhook | `INFORUAN — Motor (Edge Function) — v1`, id `TpOAa33jOuGLOTOGa6gP`, criado em 13:11 UTC. Todos os produtos. URL = a da função `gg-webhook`. Segredo colado do Keychain pelo usuário |
+| **Nomes exatos dos eventos** (finalmente confirmados) | `pix.generated`, `pix.paid`, `pix.expired`, `pix.failed`, `card.generated`, `card.pending`, `card.paid`, `card.failed`, `card.expired`, `checkout.abandoned`. **Esquema `pix.*` / `card.*`** (não `payment.*`) |
+| 1ª tentativa | A GGCheckout valida a URL ao salvar com POSTs **sem id de pagamento**. A função respondia 400 (`invalid_payload`) e a criação era recusada. Os 4 POSTs passaram na autenticação (segredo correto). **Correção** (commit `8115dab`): autenticado sem id de pagamento → 200 ignorado, sem gravar; o log leva só os nomes dos campos |
+| Ping de verificação | Campos `customer, products, payment, event`, sem id de pagamento. Respondido 200 e ignorado; nada gravado |
+| Isolamento na GGCheckout | **1 webhook** (antes 0). **8 checkouts e 20 produtos idênticos** (mesmo `updatedAt` de antes) |
+| Banco | 0 linhas na inbox, 0 pedidos, 0 contatos, 0 alertas. Modo `internal_only` |
+| Codificação | A 1ª publicação foi colada com acentos corrompidos (cópia sem UTF-8; só afetava comentários e textos de log). A republicação foi copiada com `LANG=en_US.UTF-8`, idêntica ao arquivo byte a byte |
+
+**Pontos em aberto:**
+- **Reembolso:** a lista criada não tem `pix.refunded` nem `card.refunded`. Conferir se o painel oferece esses eventos e incluí-los. Hoje o IR-08 reconcilia só `status=paid`; estender para reembolsos/chargebacks antes do modo `live`.
+- **`checkout.abandoned`:** entrou na lista. Com o motor em só internos é descartado. No `live`, um evento sem id de pagamento é ignorado (200); se trouxer id, vira `gg.unknown_event` até ser mapeado. Formato a observar no teste ponta a ponta.
