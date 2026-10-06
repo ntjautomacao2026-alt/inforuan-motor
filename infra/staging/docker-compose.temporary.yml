@@ -146,6 +146,105 @@ services:
     pids_limit: 100
     logging: *default-logging
 
+  # ─── WhatsApp (sessão Web) — Evolution PRÓPRIA do INFORUAN (doc 20). Sem porta publicada. ───
+  evolution-postgres:
+    image: postgres:17-alpine
+    container_name: inforuan-staging-evolution-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: evolution
+      POSTGRES_USER: evolution
+      POSTGRES_PASSWORD: ${INFORUAN_EVO_PG_PASSWORD:?defina INFORUAN_EVO_PG_PASSWORD}
+    command:
+      - postgres
+      - -c
+      - max_connections=30
+      - -c
+      - shared_buffers=32MB
+    volumes:
+      - inforuan_evo_pg:/var/lib/postgresql/data
+    networks:
+      - inforuan_backend
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evolution -d evolution"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    cpus: 0.20
+    pids_limit: 100
+    logging: *default-logging
+
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    container_name: inforuan-staging-evolution
+    restart: unless-stopped
+    depends_on:
+      evolution-postgres:
+        condition: service_healthy
+    environment:
+      # A imagem traz um .env de exemplo e o script de início o aplica por cima do ambiente, a menos que DOCKER_ENV=true.
+      DOCKER_ENV: "true"
+      SERVER_NAME: inforuan-evolution
+      SERVER_TYPE: http
+      SERVER_PORT: 8080
+      SERVER_URL: http://evolution:8080
+      CORS_ORIGIN: "*"   # sem porta publicada e com chave obrigatória; CORS só afeta navegadores (n8n não envia Origin)
+      LOG_LEVEL: ERROR,WARN
+      LOG_COLOR: "false"
+      LOG_BAILEYS: error
+      DEL_INSTANCE: "false"
+      LANGUAGE: pt-BR
+      TELEMETRY_ENABLED: "false"
+      PROMETHEUS_METRICS: "false"
+      AUTHENTICATION_API_KEY: ${INFORUAN_EVO_API_KEY:?defina INFORUAN_EVO_API_KEY}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://evolution:${INFORUAN_EVO_PG_PASSWORD}@evolution-postgres:5432/evolution?schema=public
+      DATABASE_CONNECTION_CLIENT_NAME: inforuan_evolution
+      # Só a sessão fica na Evolution. Mensagens e contatos vivem apenas no motor (Supabase).
+      DATABASE_SAVE_DATA_INSTANCE: "true"
+      DATABASE_SAVE_DATA_NEW_MESSAGE: "false"
+      DATABASE_SAVE_MESSAGE_UPDATE: "false"
+      DATABASE_SAVE_DATA_CONTACTS: "false"
+      DATABASE_SAVE_DATA_CHATS: "false"
+      DATABASE_SAVE_DATA_LABELS: "false"
+      DATABASE_SAVE_DATA_HISTORIC: "false"
+      DATABASE_SAVE_IS_ON_WHATSAPP: "false"
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      # Webhook global DESLIGADO até a Fase 3 (doc 20).
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      RABBITMQ_ENABLED: "false"
+      SQS_ENABLED: "false"
+      WEBSOCKET_ENABLED: "false"
+      PUSHER_ENABLED: "false"
+      KAFKA_ENABLED: "false"
+      TYPEBOT_ENABLED: "false"
+      CHATWOOT_ENABLED: "false"
+      OPENAI_ENABLED: "false"
+      DIFY_ENABLED: "false"
+      EVOAI_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: INFORUAN
+      CONFIG_SESSION_PHONE_NAME: Chrome
+      QRCODE_LIMIT: "30"
+    volumes:
+      - inforuan_evo_instances:/evolution/instances
+    networks:
+      - inforuan_backend
+      - inforuan_egress
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - node -e "fetch('http://127.0.0.1:8080/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+      interval: 15s
+      timeout: 5s
+      retries: 20
+    mem_limit: 768m
+    cpus: 0.60
+    pids_limit: 300
+    logging: *default-logging
+
 networks:
   inforuan_backend:
     name: inforuan-staging-backend
@@ -160,3 +259,7 @@ volumes:
     name: inforuan-staging-postgres17-data
   inforuan_pg_backups:
     name: inforuan-staging-postgres-backups
+  inforuan_evo_pg:
+    name: inforuan-staging-evolution-pg
+  inforuan_evo_instances:
+    name: inforuan-staging-evolution-instances

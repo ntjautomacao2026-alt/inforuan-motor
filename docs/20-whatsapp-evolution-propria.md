@@ -1,6 +1,7 @@
 # WhatsApp via Evolution própria (sessão Web, sem API oficial)
 
-> **Status: PROPOSTO. NÃO EXECUTADO.** Decisão do usuário em 05/10/2026: começar pelo WhatsApp Web (QR) com uma **Evolution própria do INFORUAN** e um **número novo e exclusivo**, que já existe. A API oficial (doc `19`) fica como evolução futura.
+> **Status: Fases 1 e 2 CONCLUÍDAS em 05–06/10/2026 (resultado na seção 6). Fase 3 pendente** (depois de 07/10 18:15 UTC, com autorização).
+> Plano original: Decisão do usuário em 05/10/2026: começar pelo WhatsApp Web (QR) com uma **Evolution própria do INFORUAN** e um **número novo e exclusivo**, que já existe. A API oficial (doc `19`) fica como evolução futura.
 > **Risco aceito:** não é oficial. O número pode ser bloqueado, sobretudo ao escrever para quem nunca falou com ele. As mitigações estão na seção 4.
 
 ## 1. Arquitetura
@@ -100,3 +101,20 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 - Docker da Evolution (documentação oficial): https://docs.evolutionfoundation.com.br/en/evolution-api/install/docker
 - Bug do webhook por instância perdido ao reiniciar: https://github.com/evolution-foundation/evolution-api/issues/2694
 - Variáveis ignoradas em algumas imagens: https://github.com/EvolutionAPI/evolution-api/issues/1474
+
+## 6. Resultado das Fases 1 e 2
+
+| Verificação | Resultado |
+|---|---|
+| Containers | `inforuan-staging-evolution` (v2.3.7) e `inforuan-staging-evolution-postgres` (17-alpine) `healthy`, 0 reinícios |
+| Limites e redes | 768 MB / 0,6 CPU e 256 MB / 0,2 CPU. Evolution em backend + egress; banco **só** no backend. **Nenhuma porta publicada** no host |
+| Configuração aplicada | `DOCKER_ENV=true` (impede que o `.env` de exemplo da imagem sobrescreva o ambiente e evita imprimir a URL do banco no log). Nada de mensagens, contatos, chats ou histórico salvos. Telemetria, webhook global e integrações desligados |
+| Ajuste durante a execução | `CORS_ORIGIN` de `http://localhost` para `*`: o valor restrito bloqueava chamadas sem cabeçalho de origem (teste de saúde e n8n). Sem porta publicada e com chave obrigatória, CORS não protege nada aqui. Só o container da Evolution foi recriado |
+| Autenticação | Sem chave → 401. Segredos (`INFORUAN_EVO_*`, 40 caracteres) só no `.env` do servidor, nunca exibidos |
+| Compose | Servidor = repositório (`infra/staging/docker-compose.temporary.yml`). Cópias antes da mudança em `/opt/inforuan-staging/evolution-setup/` |
+| Outros projetos | **OUTROS-INTACTOS** (mesma hora de início e réplicas). Containers antigos do INFORUAN não recriados |
+| Instância | `inforuan-01`, Baileys, token = o do `.env`. Ignora grupos, sem histórico, sem marcar como lida, sem "sempre online" |
+| Conexão | O QR foi recusado pelo celular ("não é possível conectar novos dispositivos"). Conectou pelo **código de pareamento** (`?number=` após `logout` da sessão) em 06/10. Estado **`open`**; número conectado termina em **6278** (fixo, DDD 31) |
+| Dados | Banco da Evolution: 0 mensagens, 0 contatos, 0 chats, 1 instância. Webhook desligado: **nada flui para o motor e nada sai** |
+
+**Próximo:** aquecer o número com uso normal. A Fase 3 vem junto com a Etapa 4, depois de 07/10 18:15 UTC.
