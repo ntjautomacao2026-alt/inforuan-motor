@@ -132,7 +132,7 @@ test('Duplicado é idempotente; modo live aceita cliente real; pagamento process
   assert.ok(await one(db, `select 1 x from orders where external_id = 'R2'`));
 });
 
-test('Limite por minuto: excedente → 429 + alerta crítico (deduplicado); payload sem id → 400', async () => {
+test('Limite por minuto: excedente → 429 + alerta crítico (deduplicado); autenticado sem id → 200 ignorado (ping)', async () => {
   const db = await setup();
   await db.exec(`update settings set value = '3' where key = 'gg_webhook_rate_per_minute'`);
   const deps = { secret: SECRET, rpc: dbRpc(db) };
@@ -140,7 +140,14 @@ test('Limite por minuto: excedente → 429 + alerta crítico (deduplicado); payl
   for (let i = 0; i < 5; i++) codes.push((await handleGgWebhook(post(payload('pix.generated', 'Q' + i, { checkoutId: TEST_CHECKOUT }), bearer), deps)).status);
   assert.deepEqual(codes, [200, 200, 200, 429, 429]);
   assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'gg_webhook_rate_limited'`)).n, 1);
-  assert.equal((await handleGgWebhook(post({ event: 'pix.paid', checkoutId: TEST_CHECKOUT }, bearer), deps)).status, 400);
+  const lines = [];
+  const ping = await handleGgWebhook(post({ test: true, webhookId: 'w1', message: 'Maria 5511988887777' }, bearer), { ...deps, log: (l) => lines.push(l) });
+  assert.equal(ping.status, 200);
+  assert.equal((await ping.json()).ignored, true);
+  assert.match(lines.join(), /sem id de pagamento\) campos=test,webhookId,message/);
+  assert.doesNotMatch(lines.join(), /Maria|5511/, 'só nomes de campos, nunca valores');
+  assert.equal((await one(db, `select count(*)::int n from webhook_inbox where payload ? 'webhookId'`)).n, 0, 'ping não é gravado');
+  assert.equal((await handleGgWebhook(post({ test: true }, { authorization: 'Bearer errado' }), deps)).status, 401, 'sem segredo continua 401');
 });
 
 test('Permissões: só service_role executa ingest_gg_webhook (n8n_engine não)', async () => {

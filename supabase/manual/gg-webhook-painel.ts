@@ -99,7 +99,13 @@ export async function handleGgWebhook(req: Request, deps: Deps): Promise<Respons
   if (res.accepted) { log(`gg-webhook 200 ${event}${res.duplicate ? ' duplicado' : ''}`); return json(200, { ok: true }); }
   if (res.reason === 'internal_only') { log(`gg-webhook 200 ignorado (só internos) ${event}`); return json(200, { ok: true, ignored: true }); }
   if (res.reason === 'rate_limited') { log('gg-webhook 429'); return json(429, { error: 'rate_limited' }); }
-  if (res.reason === 'invalid_payload') return json(400, { error: 'invalid_payload' });
+  if (res.reason === 'invalid_payload') {
+    // Autenticado, mas sem id de pagamento (ex.: "ping" de verificação da GGCheckout ao salvar o webhook).
+    // Segredo já validado → 200 sem gravar nada; o log leva só os NOMES dos campos (nunca valores).
+    const keys = Object.keys(payload).slice(0, 20).map((k) => k.replace(/[^\w.-]/g, '').slice(0, 30)).join(',');
+    log(`gg-webhook 200 ignorado (sem id de pagamento) campos=${keys}`);
+    return json(200, { ok: true, ignored: true });
+  }
   log('gg-webhook 500 resposta inesperada do banco');
   return json(500, { error: 'unexpected' });
 }
