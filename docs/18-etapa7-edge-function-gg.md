@@ -1,6 +1,6 @@
 # Etapa 7 — Edge Function `gg-webhook` (entrada da GGCheckout)
 
-> **Status: Fase A CONCLUÍDA em 05/10/2026** (0010 aplicada pelo MCP; código da função no banco idêntico ao do repositório, hash `21f10a77…`; só `service_role` executa; `anon`, `authenticated` e `n8n_engine` não; modo `internal_only`; 0 linhas na inbox, 0 eventos, 0 alertas). **Função ainda NÃO publicada.** Cada fase seguinte só com autorização. **Criar o webhook na GGCheckout é uma fase separada**, a última.
+> **Status: Fase A CONCLUÍDA em 05/10/2026** (0010 aplicada pelo MCP; código da função no banco idêntico ao do repositório, hash `21f10a77…`; só `service_role` executa; `anon`, `authenticated` e `n8n_engine` não; modo `internal_only`; 0 linhas na inbox, 0 eventos, 0 alertas). **Função publicada e testada (Fases B–D concluídas; seção 5).** Cada fase seguinte só com autorização. **Criar o webhook na GGCheckout é uma fase separada**, a última.
 
 ## 1. Desenho
 
@@ -64,3 +64,16 @@ Na Fase E, com o motor em **só internos**, os eventos de clientes reais chegam,
 - **Função:** apagar ou despublicar a `gg-webhook` (Edge Functions → função → Delete), ou remover o secret, que a faz responder 503 (falha fechada).
 - **Webhook na GGCheckout:** excluir no painel. A reconciliação (IR-08) continua cobrindo pagamentos.
 - **0010:** `drop function public.ingest_gg_webhook(jsonb, jsonb, timestamptz);`. O índice e o ajuste são inofensivos.
+
+## 5. Resultado das Fases B, C e D (05–06/10/2026)
+
+| Fase | Resultado |
+|---|---|
+| B: segredo | Gerado no Mac (Keychain `inforuan-gg-webhook-secret`, 48 caracteres, nunca exibido) e cadastrado em Edge Functions → Secrets como `GG_WEBHOOK_SECRET` |
+| C: publicação | Pelo editor do painel, com o arquivo único `supabase/manual/gg-webhook-painel.ts` (gerado das fontes; um teste garante que é idêntico). Na 1ª tentativa ficou publicado o **exemplo padrão** do editor (`@supabase/server`, que exigia `apikey`). Corrigido colando o arquivo inteiro. "Verify JWT" desligado |
+| Checagens sem segredo | GET → **405** `method_not_allowed`; POST sem segredo e com segredo errado → **401** `unauthorized`. É a nossa função respondendo, e o segredo está configurado (senão seria 503) |
+| D: `ops/testar-gg-webhook.mjs` | **TUDO OK (7/7):** GET 405; sem segredo 401; segredo errado 401; HMAC errado 401; corpo > 64 KB 413; **Bearer correto 200 descartado**; **HMAC correto 200 descartado** (modo só internos) |
+| Banco depois do teste | 0 linhas na inbox, 0 pedidos, 0 contatos, 0 alertas. Só **2 eventos** `gg.ignored_internal_only` com `{event, checkout_id}`, sem dado pessoal. 0 falhas do `pg_cron` |
+| Logs da função | Só status e tipo de evento (`gg-webhook 401`, `gg-webhook 200 ignorado (só internos) pix.generated`). Sem corpo, telefone, e-mail ou segredo |
+
+**Falta só a Fase E** (criar o webhook no painel da GGCheckout), com autorização própria.

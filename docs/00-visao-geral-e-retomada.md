@@ -112,7 +112,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 | `15` | Etapa 2: modo só internos, envio simulado e `pg_cron` (aplicado em 05/10) |
 | `16` | Etapa 3: login do `n8n_engine` (Parte A concluída em 05/10) e credencial no n8n (Parte B pendente) |
 | `17` | Etapa 4: workflows só pela `api` (preparado no repositório; importação depois de 07/10) |
-| `18` | Etapa 7: Edge Function `gg-webhook` (preparada e testada localmente; não publicada) |
+| `18` | Etapa 7: Edge Function `gg-webhook` publicada e testada em 06/10 (falta só criar o webhook na GGCheckout) |
 | `19` | Provedor de WhatsApp: comparação, custos e recomendação (API oficial = evolução futura) |
 | `20` | WhatsApp via Evolution própria (sessão Web): Fases 1–2 concluídas (número conectado em 06/10); Fase 3 pendente |
 
@@ -154,7 +154,7 @@ Depois, o mesmo motor vai ajudar a **aumentar o ticket médio (AOV) e o valor de
 - [x] Modo só internos + envio simulado + `pg_cron` no Supabase (doc `15`).
 - [ ] Conectar o n8n ao Supabase (pela porta restrita).
 - [x] Escolher e conectar o WhatsApp: Evolution própria, sessão Web, número exclusivo conectado em 06/10 (doc `20`). Ainda **não ligado ao motor** (Fase 3).
-- [ ] Publicar a Edge Function da GGCheckout. *(código e testes prontos, doc `18`)*
+- [x] Publicar a Edge Function da GGCheckout (06/10; teste 7/7, doc `18`). Webhook na GGCheckout ainda **não** criado.
 - [x] Importar os workflows **inativos** (4 antigos, ainda com service_role).
 - [x] Refazer os workflows para `api.*` (IR-05, IR-06, IR-08; IR-03/IR-07 no `pg_cron`). Preparado no repositório (doc `17`); importação depois de 07/10.
 - [ ] Testar de ponta a ponta com um contato interno.
