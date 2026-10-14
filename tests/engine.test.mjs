@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql', 'supabase/migrations/0013_ajustes_teste_e2e.sql', 'supabase/migrations/0014_reconexoes_whatsapp.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql', 'supabase/migrations/0013_ajustes_teste_e2e.sql', 'supabase/migrations/0014_reconexoes_whatsapp.sql', 'supabase/migrations/0016_pix_codigo_separado.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -111,12 +111,12 @@ test('PAGOU → cancela a régua na hora e agenda pós-venda; nenhuma cobrança 
 test('Cobrança já na fila é barrada no envio se o pagamento chegar antes (guard do claim)', async () => {
   const db = await setup({ holdout: 0 });
   await gg(db, 'pix.generated', 'P1');
-  await dispatch(db, 6);                                             // passo 1 vai para a fila
-  assert.equal((await one(db, `select count(*)::int n from outbound_messages where status='queued'`)).n, 1);
+  await dispatch(db, 6);                                             // passo 1 vai para a fila (texto + código, 0016)
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where status='queued'`)).n, 2);
   await db.query(`update orders set status = 'paid', paid_at = $1`, [at(7)]); // pagamento sem passar pelas regras (pior caso)
   const got = await claim(db, 7);
   assert.equal(got.length, 0);
-  assert.equal((await one(db, `select status, status_reason from outbound_messages`)).status_reason, 'paid');
+  assert.deepEqual((await all(db, `select distinct status_reason from outbound_messages`)).map((r) => r.status_reason), ['paid']);
 });
 
 test('Webhook duplicado e fora de ordem: idempotente e monotônico', async () => {
@@ -144,8 +144,8 @@ test('Régua completa quando ninguém paga: 4 mensagens, janela de horário resp
   await gg(db, 'pix.generated', 'P1');
   const sent = [];
   for (const m of [6, 20, 180, 1440]) { await dispatch(db, m); sent.push(...(await drainSend(db, m))); }
-  assert.deepEqual(sent.map((s) => s.template_key), ['pix_ativo', 'pix_novo_link', 'pix_lembrete_3h', 'pix_ultimo_24h']);
-  assert.match(sent[1].rendered_body, /https:\/\/pay\.example\/dDTs0BWHlGqWRdqhQakS/);
+  assert.deepEqual(sent.map((s) => s.template_key), ['pix_ativo', 'pix_codigo', 'pix_novo_link', 'pix_lembrete_3h', 'pix_ultimo_24h']);
+  assert.match(sent[2].rendered_body, /https:\/\/pay\.example\/dDTs0BWHlGqWRdqhQakS/);
   assert.equal((await one(db, `select status from enrollments`)).status, 'completed');
 });
 
@@ -253,7 +253,7 @@ test('Opt-out por palavra-chave suprime tudo e confirma uma vez', async () => {
   await evo(db, inbound('IN1', 'PARAR'), 7);
   assert.ok((await one(db, `select opted_out_at from contacts`)).opted_out_at);
   const out = await all(db, `select template_key, status from outbound_messages order by queued_at`);
-  assert.deepEqual(out.map((o) => [o.template_key, o.status]), [['pix_ativo', 'cancelled'], ['opt_out_confirmacao', 'queued']]);
+  assert.deepEqual(out.map((o) => [o.template_key, o.status]), [['pix_ativo', 'cancelled'], ['pix_codigo', 'cancelled'], ['opt_out_confirmacao', 'queued']]);
   await gg(db, 'pix.generated', 'P2', {}, 60);
   assert.equal((await one(db, `select count(*)::int n from scheduled_actions where status='pending'`)).n, 0);
 });
@@ -282,10 +282,10 @@ test('Eco do próprio motor NÃO vira handoff (casamento por id e por conteúdo)
   // eco chega ANTES do adapter devolver o id
   await evo(db, inbound('EVO-ID-1', m.rendered_body, { fromMe: true }), 6.05);
   assert.equal((await one(db, `select count(*)::int n from handoffs`)).n, 0);
-  assert.equal((await one(db, `select status, provider_message_id from outbound_messages`)).provider_message_id, 'EVO-ID-1');
+  assert.equal((await one(db, `select status, provider_message_id from outbound_messages where template_key = 'pix_ativo'`)).provider_message_id, 'EVO-ID-1');
   await sendOk(db, m.id, 'EVO-ID-1', 6.1);
   await evo(db, { event: 'messages.update', instance: 'inforuan-01', data: { keyId: 'EVO-ID-1', status: 'READ' } }, 7);
-  assert.equal((await one(db, `select status from outbound_messages`)).status, 'read');
+  assert.equal((await one(db, `select status from outbound_messages where template_key = 'pix_ativo'`)).status, 'read');
 });
 
 test('Handoff: 10h abre e alerta; 22h vai para fila e é promovido às 9h com resumo', async () => {
@@ -366,8 +366,8 @@ test('Sem link de checkout cadastrado: passos com link são pulados e há alerta
   await db.exec(`update catalog_checkouts set public_url = null`);
   await gg(db, 'pix.generated', 'P1');
   await dispatch(db, 20);
-  const out = await all(db, `select template_key from outbound_messages`);
-  assert.deepEqual(out.map((o) => o.template_key), ['pix_ativo']);
+  const out = await all(db, `select template_key from outbound_messages order by queued_at`);
+  assert.deepEqual(out.map((o) => o.template_key), ['pix_ativo', 'pix_codigo']);
   assert.ok(await one(db, `select 1 x from alerts where kind='missing_checkout_url'`));
 });
 
@@ -421,7 +421,7 @@ test('Interface api: n8n_engine só executa funções de api; não lê tabelas n
   await db.query(`select api.heartbeat('n8n', '{"v":"test"}')`);
   await db.exec(`reset role`);
   assert.ok(await one(db, `select 1 x from service_heartbeats where service = 'n8n'`));
-  assert.equal((await one(db, `select status from outbound_messages`)).status, 'sent');
+  assert.equal((await one(db, `select status from outbound_messages where template_key = 'pix_ativo'`)).status, 'sent');
 });
 
 test('Retenção: JSON bruto processado com mais de 30 dias é apagado; recente fica', async () => {
@@ -458,7 +458,7 @@ test('Só internos (padrão da 0007): cliente real não é matriculado nem sorte
   assert.equal((await one(db, `select count(*)::int n from scheduled_actions`)).n, 4);
   await dispatch(db, 6);
   const out = await all(db, `select to_phone_e164 from outbound_messages`);
-  assert.deepEqual(out.map((o) => o.to_phone_e164), [INTERNAL]);
+  assert.deepEqual(out.map((o) => o.to_phone_e164), [INTERNAL, INTERNAL], 'texto + código, só para o interno');
 });
 
 test('Só internos: pagamento de cliente real não enfileira pós-venda (fica registrado como suprimido)', async () => {
@@ -479,10 +479,10 @@ test('Modo inválido ou ausente vale como só internos; volta de live cancela n�
   await db.exec(`update settings set value = '"live"' where key = 'engine_mode'`);
   await gg(db, 'pix.generated', 'R1', { phone: '+5511977776666' });
   await dispatch(db, 6);
-  assert.equal((await one(db, `select count(*)::int n from outbound_messages where status = 'queued'`)).n, 1);
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where status = 'queued'`)).n, 2);
   await db.query(`select set_engine_mode('inforuan', 'internal_only', 'teste')`);
   assert.equal((await claim(db, 7)).length, 0);
-  assert.equal((await one(db, `select status_reason from outbound_messages`)).status_reason, 'internal_only');
+  assert.deepEqual((await all(db, `select distinct status_reason from outbound_messages`)).map((r) => r.status_reason), ['internal_only']);
   await assert.rejects(db.query(`select set_engine_mode('inforuan', 'turbo', 'teste')`), /engine_mode_invalid/);
   await assert.rejects(db.query(`select set_engine_mode('inforuan', 'live', '')`), /engine_mode_requires_operator/);
   await db.query(`select set_engine_mode('inforuan', 'live', 'teste')`);
@@ -499,7 +499,7 @@ test('Envio simulado: nasce pausado, só "envia" para internos, respeita o guard
   await dispatch(db, 6);
   assert.equal((await one(db, `select simulate_outbound('inforuan-sim', 10, $1) r`, [at(6)])).r.simulated, 0, 'pausada');
   await db.query(`select unpause_instance('inforuan-sim', 'teste')`);
-  assert.equal((await one(db, `select simulate_outbound('inforuan-sim', 10, $1) r`, [at(7)])).r.simulated, 1);
+  assert.equal((await one(db, `select simulate_outbound('inforuan-sim', 10, $1) r`, [at(7)])).r.simulated, 2, 'texto + código do interno');
   const rows = await all(db, `select to_phone_e164, status, provider, provider_message_id from outbound_messages order by to_phone_e164`);
   const real = rows.find((r) => r.to_phone_e164 === PHONE);
   const internal = rows.find((r) => r.to_phone_e164 === INTERNAL);
@@ -643,7 +643,7 @@ test('0011: instância inforuan-01 nasce inativa e pausada, com limites de aquec
   const db = new PGlite();
   for (const s of SQL) await db.exec(s);
   const i = await one(db, `select provider, active, paused, pause_reason, rate_per_minute, min_gap_seconds, daily_cap from provider_instances where instance_name = 'inforuan-01'`);
-  assert.deepEqual(i, { provider: 'evolution', active: false, paused: true, pause_reason: 'not_activated', rate_per_minute: 2, min_gap_seconds: 30, daily_cap: 40 });
+  assert.deepEqual(i, { provider: 'evolution', active: false, paused: true, pause_reason: 'not_activated', rate_per_minute: 2, min_gap_seconds: 5, daily_cap: 40 });   // gap 30 → 5 na 0016
   await db.query(`select watchdog('inforuan', $1)`, [at(0)]);
   assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'health_stale'`)).n, 0, 'inativa: vigia não alerta');
 });
@@ -815,4 +815,45 @@ test('0015: só o passo 1 da régua e sem pós-venda pelo WhatsApp; religar o p�
   await db.exec(`update settings set value = '"on"' where key = 'post_purchase_whatsapp'`);
   await gg(db, 'pix.paid', 'S2', { phone: '+5511977770000' }, 9);
   assert.equal((await one(db, `select count(*)::int n from outbound_messages where purpose = 'post_purchase'`)).n, 1, 'religado');
+});
+
+test('0016: passo 1 = texto aprovado + código Pix SOZINHO na mensagem seguinte; pagou entre as duas → o código não sai', async () => {
+  const db = await setup({ holdout: 0 });
+  await db.exec(`update provider_instances set min_gap_seconds = 0, rate_per_minute = 10 where instance_name = 'inforuan-01'`);
+  await gg(db, 'pix.generated', 'C1');
+  await dispatch(db, 6);
+  const q = await all(db, `select template_key, rendered_body from outbound_messages order by queued_at`);
+  assert.deepEqual(q.map((r) => r.template_key), ['pix_ativo', 'pix_codigo']);
+  assert.match(q[0].rendered_body, /copie o código que vou mandar logo abaixo/);
+  assert.doesNotMatch(q[0].rendered_body, /PIXCODE/, 'texto sem o código');
+  assert.equal(q[1].rendered_body, '00020126PIXCODEC1', 'código sozinho, sem nada em volta');
+  const [m1] = await claim(db, 6.1);
+  assert.equal(m1.template_key, 'pix_ativo', 'texto sai primeiro');
+  await sendOk(db, m1.id, 'PM-C1-A', 6.1);
+  await db.query(`update orders set status = 'paid', paid_at = $1 where external_id = 'C1'`, [at(6.15)]);
+  assert.equal((await claim(db, 6.2)).length, 0);
+  assert.equal((await one(db, `select status_reason from outbound_messages where template_key = 'pix_codigo'`)).status_reason, 'paid', 'pagou → código cancelado');
+});
+
+test('0016: os dois envios são reconhecidos como do motor (eco do código não vira atendimento humano)', async () => {
+  const db = await setup({ holdout: 0 });
+  await db.exec(`update provider_instances set min_gap_seconds = 0, rate_per_minute = 10 where instance_name = 'inforuan-01'`);
+  await gg(db, 'pix.generated', 'C2');
+  await dispatch(db, 6);
+  for (const t of [6.1, 6.2]) { const [m] = await claim(db, t); await sendOk(db, m.id, 'PM-' + m.template_key, t); }
+  const echo = (id, text) => ({ event: 'send.message', instance: 'inforuan-01', data: { key: { remoteJid: PHONE.replace('+', '') + '@s.whatsapp.net', fromMe: true, id },
+    message: { conversation: text }, messageType: 'conversation', messageTimestamp: Math.floor(T0.getTime() / 1000) } });
+  await evo(db, echo('PM-pix_ativo', 'x'), 6.3);
+  await evo(db, echo('PM-pix_codigo', '00020126PIXCODEC2'), 6.3);
+  assert.equal((await one(db, `select count(*)::int n from handoffs`)).n, 0);
+  assert.deepEqual((await all(db, `select origin from messages order by occurred_at`)).map((r) => r.origin), ['engine', 'engine']);
+});
+
+test('0016: pedido sem código Pix pula o passo 1 (nunca diz "o código vem abaixo" sem código)', async () => {
+  const db = await setup({ holdout: 0 });
+  await gg(db, 'pix.generated', 'C3');
+  await db.exec(`update orders set pix_code = null where external_id = 'C3'`);
+  await dispatch(db, 6);
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages`)).n, 0);
+  assert.equal((await one(db, `select skip_reason from scheduled_actions sa join sequence_steps st on st.id = sa.step_id where st.position = 1`)).skip_reason, 'missing_pix_code');
 });

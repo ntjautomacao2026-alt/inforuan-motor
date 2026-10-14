@@ -1,6 +1,6 @@
 # Liberação 1 — recuperação de Pix (passo 1) para clientes reais
 
-> **Status: PREPARADO. NÃO LIGADO.** Decisões do usuário em 14/10/2026: começar **só pela recuperação, passo 1**; **esperar o Ruan aprovar o texto**; **o Ruan acompanha** as respostas no celular do número (31) 3157-6278. Telegram e IA ficam para depois.
+> **Status: texto aprovado pelo Ruan e configuração aplicada (0015 + 0016, 14/10/2026). Modo ainda `internal_only`: falta o teste no número interno e a autorização para `live`.** Decisões do usuário em 14/10/2026: começar **só pela recuperação, passo 1**; **esperar o Ruan aprovar o texto**; **o Ruan acompanha** as respostas no celular do número (31) 3157-6278. Telegram e IA ficam para depois.
 
 ## 1. O que vai ao ar
 
@@ -52,3 +52,29 @@ Se tiver qualquer dúvida, é só responder aqui.
    - nenhum envio a quem já pagou.
 
 **Voltar atrás a qualquer momento:** `set_engine_mode('inforuan', 'internal_only', …)`. Clientes reais param de entrar na régua na hora, e o que já estava na fila é cancelado no envio.
+
+## 5. Aprovação e configuração (14/10/2026)
+
+- **Ruan aprovou o texto**, pedindo o **código Pix numa mensagem separada** (público 40+).
+- **0015 (aplicada):** só o passo 1 ativo; `post_purchase_whatsapp = off`.
+- **0016 (aplicada):**
+  - `pix_ativo` v2 (texto aprovado, sem o código, avisando que ele vem logo abaixo);
+  - `pix_codigo` v1 (só o código), enfileirado junto, com o mesmo guard e a mesma validade;
+  - passo 1 pulado se o pedido não tiver código;
+  - intervalo mínimo de 30 s → 5 s (2/min e 40/dia mantidos).
+
+  Funções idênticas ao repositório. Testes 60/60.
+- **Capacidade com 2 mensagens por cliente:** o limite de 40/dia cobre **~20 clientes/dia**. Subir para 60–80 conforme a saúde do número.
+
+Texto final do passo 1:
+
+```
+Oi, {nome}! Vi que você gerou o Pix do *{produto}* e ele ainda está ativo por alguns minutos.
+
+Para concluir, copie o código que vou mandar logo abaixo e cole no app do seu banco, em *Pix Copia e Cola*.
+
+Se tiver qualquer dúvida, é só responder aqui.
+```
+```
+{código Pix}
+```
