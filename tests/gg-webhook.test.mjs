@@ -10,7 +10,7 @@ import { handleGgWebhook } from '../supabase/functions/gg-webhook/handler.ts';
 const root = new URL('..', import.meta.url).pathname;
 const FILES = ['migrations/0001_core.sql', 'migrations/0002_functions.sql', 'migrations/0003_views.sql', 'migrations/0004_hardening.sql',
   'migrations/0005_fk_indexes.sql', 'migrations/0006_api_interface.sql', 'seed/0001_config.sql', 'migrations/0007_modo_interno.sql',
-  'migrations/0009_n8n_engine_limites.sql', 'migrations/0010_ingestao_gg.sql', 'migrations/0011_whatsapp_evolution.sql'].map((f) => readFileSync(root + 'supabase/' + f, 'utf8'));
+  'migrations/0009_n8n_engine_limites.sql', 'migrations/0010_ingestao_gg.sql', 'migrations/0011_whatsapp_evolution.sql', 'migrations/0012_gg_datas_firestore.sql'].map((f) => readFileSync(root + 'supabase/' + f, 'utf8'));
 
 const SECRET = 'segredo-de-teste-com-mais-de-24-caracteres';
 const INTERNAL = '+5511900000001';
@@ -165,4 +165,26 @@ test('Arquivo único do painel é idêntico às fontes testadas (handler.ts + in
   assert.ok(painel.includes(h.trimEnd()), 'handler.ts inteiro');
   assert.ok(painel.endsWith(i), 'index.ts inteiro, sem o import');
   assert.doesNotMatch(painel, /from '\.\/handler\.ts'/);
+});
+
+test('0012: createdAt no formato real da GGCheckout (Firestore _seconds/_nanoseconds) e sem checkoutId; interno pelo telefone', async () => {
+  const db = await setup();
+  const real = { event: 'pix.generated', createdAt: { _seconds: 1792008942, _nanoseconds: 712000000 },
+    customer: { name: 'Teste', email: 't@example.com', phone: '5521900000001', document: '000' },
+    payment: { id: 'FS-1', amount: '5', method: 'pix.generated', status: 'pending', gateway: 'mercadopago', pixCode: 'PIXFS1', paymentMethod: 'pix' },
+    product: { id: 'EuwGEZ2vDJI3ACa8j4uE', type: 'main', title: 'Kit Completo Atualiza 40+' },
+    products: [{ id: 'EuwGEZ2vDJI3ACa8j4uE', type: 'main', price: null }], webhook: { id: 'w' } };
+  await db.exec(`update settings set value = '["+5521900000001"]' where key = 'internal_test_phones'`);
+  const r = await handleGgWebhook(post(real, bearer), { secret: SECRET, rpc: dbRpc(db) });
+  assert.equal(r.status, 200);
+  const w = await one(db, `select processed_at is not null ok, error from webhook_inbox`);
+  assert.deepEqual(w, { ok: true, error: null });
+  const o = await one(db, `select status, amount_cents, source_created_at, external_checkout_id from orders where external_id = 'FS-1'`);
+  assert.equal(new Date(o.source_created_at).toISOString(), '2026-10-14T20:15:42.712Z');
+  assert.equal(o.amount_cents, 500);
+  assert.equal(o.external_checkout_id, null);
+  assert.equal((await one(db, `select count(*)::int n from scheduled_actions`)).n, 4);
+  assert.equal((await one(db, `select gg_ts('"2026-10-14T20:00:00Z"'::jsonb) t`)).t.toISOString(), '2026-10-14T20:00:00.000Z');
+  assert.equal((await one(db, `select gg_ts('{"x":1}'::jsonb) t`)).t, null);
+  assert.equal((await one(db, `select gg_ts('"lixo"'::jsonb) t`)).t, null);
 });
