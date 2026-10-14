@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql', 'supabase/migrations/0013_ajustes_teste_e2e.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -729,4 +729,36 @@ test('Workflows WhatsApp: IR-02/04/07 rodam como n8n_engine; Evolution só com t
   await run('IR-07 Saude da conexao', 'Atualizar estado (pausa automática)', { json: { p_instance: 'inforuan-01', p_state: 'close' } });
   assert.deepEqual(await one(db, `select state, paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`),
     { state: 'close', paused: true, pause_reason: 'disconnected' });
+});
+
+// ─── 0013: ajustes do 1º teste ponta a ponta ────────────────────────────────
+test('0013: confirmação de entrega com JID LID é aceita pelo id da mensagem do motor (interno); LID desconhecido é descartado', async () => {
+  const db = await setup({ holdout: 0, mode: 'internal_only' });
+  await gg(db, 'pix.generated', 'L1', { phone: INTERNAL });
+  await dispatch(db, 6);
+  const [m] = await claim(db, 6);
+  await sendOk(db, m.id, 'PM-LID-1', 6);
+  const lid = (keyId, status) => ({ event: 'messages.update', instance: 'inforuan-01',
+    data: { keyId, remoteJid: '123456789012345@lid', fromMe: true, status } });
+  assert.equal((await evoApi(db, lid('PM-LID-1', 'DELIVERY_ACK'))).accepted, true);
+  assert.equal((await evoApi(db, lid('PM-LID-1', 'READ'))).accepted, true);
+  const o = await one(db, `select status, delivered_at is not null d, read_at is not null r from outbound_messages where id = $1`, [m.id]);
+  assert.deepEqual(o, { status: 'read', d: true, r: true });
+  assert.equal((await evoApi(db, lid('ID-DE-OUTRA-CONVERSA', 'READ'))).reason, 'internal_only');
+  assert.equal((await one(db, `select count(*)::int n from message_status_events where provider_message_id = 'ID-DE-OUTRA-CONVERSA'`)).n, 0);
+});
+
+test('0013: pedido sem checkoutId usa o checkout público de venda do produto (nunca o de teste) nos passos com link', async () => {
+  const db = await setup({ holdout: 0 });
+  const p = ggPayload('pix.generated', 'NC1');
+  delete p.checkoutId;
+  await db.query(`select ingest_webhook('inforuan','ggcheckout','nc1','pix.generated','{}',$1)`, [p]);
+  await db.query(`select process_pending_inbox(50, $1)`, [at(0)]);
+  assert.equal((await one(db, `select external_checkout_id from orders where external_id = 'NC1'`)).external_checkout_id, null);
+  await dispatch(db, 6);
+  await db.exec(`update outbound_messages set status = 'sent'`);
+  await dispatch(db, 20);
+  const step2 = await one(db, `select rendered_body from outbound_messages where template_key = 'pix_novo_link'`);
+  assert.match(step2.rendered_body, /https:\/\/pay\.example\/dDTs0BWHlGqWRdqhQakS/, 'checkout real do produto, não o de teste');
+  assert.doesNotMatch(step2.rendered_body, /q0EbnyHD8PgIraUBZTTl/);
 });
