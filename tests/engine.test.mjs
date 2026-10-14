@@ -562,14 +562,17 @@ const loadWorkflows = async () => {
   const d = root + 'n8n/dist/';
   return readdirSync(d).filter((f) => f.endsWith('.json')).map((f) => JSON.parse(readFileSync(d + f, 'utf8')));
 };
-// Mesma regra do nó Postgres v2.5+: expressão que devolve array; objeto → JSON.stringify.
+// Como o nó Postgres v2.7 realmente faz (descoberto em produção 14/10): a expressão é avaliada pelo n8n e, se der
+// array, os valores vão CRUS ao driver (sem JSON.stringify). Exigimos que todo $N já seja texto.
 const n8nParams = (n, ctx = {}) => {
   const raw = n.parameters.options?.queryReplacement;
   if (!raw) return [];
   const inner = raw.replace(/^=\{\{\s*/, '').replace(/\s*\}\}$/, '');
   const $ = (name) => ({ item: { json: ctx.nodes?.[name] ?? {} }, first: () => ({ json: ctx.nodes?.[name] ?? {} }) });
   const vals = new Function('$json', '$', `return (${inner});`)(ctx.json ?? {}, $);
-  return vals.filter((v) => v !== undefined).map((v) => (typeof v === 'object' && v !== null ? JSON.stringify(v) : v));
+  assert.ok(Array.isArray(vals), `${n.name}: queryReplacement deve dar array`);
+  for (const v of vals) assert.equal(typeof v, 'string', `${n.name}: parâmetro precisa chegar como texto JSON (lista/objeto cru quebra no driver)`);
+  return vals;
 };
 const pgNode = (wfs, wfName, nodeName) => wfs.find((w) => w.name === wfName).nodes.find((n) => n.name === nodeName);
 
@@ -785,4 +788,14 @@ test('0014: reconexão curta pausa e libera sem alerta; queda longa gera 1 alert
   await set('open', 20);
   assert.deepEqual(await kinds(), ['instance_disconnected', 'instance_reconnected']);
   assert.equal((await one(db, `select paused from provider_instances where instance_name = 'inforuan-01'`)).paused, false);
+});
+
+test('Workflows: agendamentos ≥ 60 s usam minutos (n8n trata segundos > 59 como "todo minuto")', async () => {
+  const wfs = await loadWorkflows();
+  for (const w of wfs) for (const n of w.nodes.filter((n) => n.type === 'n8n-nodes-base.scheduleTrigger')) {
+    const r = n.parameters.rule.interval[0];
+    if (r.field === 'seconds') assert.ok(r.secondsInterval < 60, `${w.name}: ${r.secondsInterval}s`);
+  }
+  const ir08 = wfs.find((w) => w.name === 'IR-08 Reconciliacao GGCheckout').nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
+  assert.deepEqual(ir08.parameters.rule.interval[0], { field: 'minutes', minutesInterval: 5 });
 });

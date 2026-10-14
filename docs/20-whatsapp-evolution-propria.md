@@ -179,3 +179,16 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 | **IR-08** | Importado **inativo** por cima do IR-08 antigo (sem `supabaseApi`). Não guarda execução nem em erro, porque a resposta da API traz dados de clientes |
 | Status de reembolso na API | `refunded` e `charged_back` retornam 0 pagamentos (a conta não tem reembolso registrado na GGCheckout). Nomes a confirmar no 1º caso real |
 | **Pendente antes do Telegram** | Há ~85 alertas antigos de reconexão (anteriores à 0014) não enviados. Marcar como encerrados antes de ativar o IR-06, para não inundar o grupo |
+
+## 11. Reconciliação (IR-08) ligada (14/10/2026, autorizada)
+
+- **1ª ativação: dois defeitos**, sem gravar nada:
+  1. o agendamento "segundos = 300" virou "todo minuto" (o campo de segundos do n8n vira cron `*/N`);
+  2. "cannot cast type text[] to jsonb": o nó Postgres 2.7 repassa ao driver o array da expressão **cru**, e uma lista JS vira `text[]`. Afetava também o caminho "já pagou na checagem" do IR-04, que não tinha sido exercitado no teste.
+- **Correção no gerador:**
+  - todo parâmetro vai como **texto JSON** (`JSON.stringify`);
+  - intervalos de 60 s ou mais usam o campo de minutos.
+
+  A simulação dos testes passou a reproduzir o comportamento real (exige texto) e há um teste para os agendamentos.
+- **Reimportação:** IR-02, IR-04, IR-07 e IR-08 reimportados com os mesmos ids e publicados. Só o n8n foi reiniciado.
+- **1ª rodada correta (21:10 UTC):** 4 pagamentos reais registrados **só com id e status** (sem contato), 0 erros, 0 alertas, nenhuma mensagem a cliente.

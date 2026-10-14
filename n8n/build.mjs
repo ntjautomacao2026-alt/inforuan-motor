@@ -37,16 +37,23 @@ const pos = () => [(x++ % 8) * 260, Math.floor((x - 1) / 8) * 200];
 const node = (name, type, typeVersion, parameters, extra = {}) =>
   ({ id: randomUUID(), name, type, typeVersion, position: pos(), parameters, ...extra });
 
-// Chamada à interface `api` pelo nó Postgres (v2.7). `param` é uma expressão JS cujo valor vira $1 (objeto → JSON).
+// Chamada à interface `api` pelo nó Postgres (v2.7). `param` é uma expressão JS cujo valor vira $1.
+// SEMPRE serializado em texto JSON: o nó repassa o array da expressão cru ao driver, e uma lista JS viraria text[]
+// (erro "cannot cast type text[] to jsonb", visto no IR-08 em 14/10/2026). Texto → $1::jsonb funciona para tudo.
 const api = (name, sql, param = null, extra = {}) => node(name, 'n8n-nodes-base.postgres', 2.7, {
   resource: 'database',
   operation: 'executeQuery',
   query: sql.trim(),
-  options: param ? { queryReplacement: `={{ [ ${param} ] }}` } : {},
+  options: param ? { queryReplacement: `={{ [ JSON.stringify(${param}) ] }}` } : {},
 }, { credentials: { postgres: { id: credId('postgres'), name: C.CRED_POSTGRES } }, ...extra });
 
-const schedule = (name, seconds) => node(name, 'n8n-nodes-base.scheduleTrigger', 1.2,
-  { rule: { interval: [{ field: 'seconds', secondsInterval: seconds }] } });
+// O campo "seconds" do agendador vira cron de segundos (*/N): acima de 59 dispara a cada minuto (visto no IR-08).
+// Intervalos ≥ 60 s usam o campo de minutos.
+const schedule = (name, seconds) => node(name, 'n8n-nodes-base.scheduleTrigger', 1.2, {
+  rule: { interval: [seconds < 60 ? { field: 'seconds', secondsInterval: seconds }
+                                   : (() => { if (seconds % 60) throw new Error('intervalo ≥ 60 s deve ser múltiplo de 60');
+                                              return { field: 'minutes', minutesInterval: seconds / 60 }; })()] },
+});
 
 const code = (name, js, extra = {}) => node(name, 'n8n-nodes-base.code', 2, { jsCode: js }, extra);
 
