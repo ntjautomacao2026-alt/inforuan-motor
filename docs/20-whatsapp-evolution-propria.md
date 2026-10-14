@@ -152,3 +152,21 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 | Credencial Evolution | Montada no servidor a partir do `.env` (token da instância), importada com `n8n import:credentials`, criptografada pelo n8n (id `nyL91EwaKwfgotMA`). Arquivo temporário apagado; token nunca exibido |
 | Workflows | IR-02, IR-04 e IR-07 importados **inativos**, já ligados às credenciais. IR-04 ainda sem a credencial da GGCheckout. Os 4 antigos seguem inativos (arquivar depois) |
 | Webhook global | Ligado para `http://n8n:5678/webhook/evo/<sufixo>`; URL só no `.env` e no `n8n/config.local.json`. Só 4 eventos (`MESSAGES_UPSERT`, `MESSAGES_UPDATE`, `SEND_MESSAGE`, `CONNECTION_UPDATE`); os outros 26 desligados explicitamente. Só a Evolution foi recriada; a sessão continuou `open`. Os 404 no log são esperados até o IR-02 ser ativado |
+
+## 9. 1º teste ponta a ponta (14/10/2026), só internos
+
+| Hora (BRT) | Evento |
+|---|---|
+| 17:15:42 | Pix de R$ 5 gerado no checkout de teste (telefone interno final 4236) |
+| 17:21:57 | Passo 1 (`pix_ativo`) **enviado** pelo número do INFORUAN; eco reconhecido como do motor, sem handoff |
+| 17:24:11 | Pagamento. Evento recebido 1 s depois |
+| 17:24:12 | **Régua parada**: passos 2–4 cancelados (`paid`) |
+| 17:24:19 | **Pós-venda (`pos_compra_acesso`) enviado**, 8 s depois do pagamento |
+
+**Problemas encontrados e corrigidos no caminho:**
+- **Webhook da GGCheckout sem disparo** (histórico vazio desde 06/10): o filtro de produtos vazio funcionava como "nenhum produto". Corrigido listando os 21 produtos via MCP. **Produtos novos precisam ser adicionados ao filtro.**
+- **`createdAt` em formato Firestore** (`_seconds`/`_nanoseconds`) quebrava o processamento. Corrigido pela **0012** (`gg_ts`).
+- **O payload não traz `checkoutId`.** A **0013** usa o checkout público de venda do mesmo produto nos passos com link. Falta cadastrar `catalog_checkouts.public_url`.
+- **Confirmações de entrega/leitura com JID LID** eram descartadas no modo só internos. A **0013** reconhece pelo id da mensagem enviada pelo motor.
+
+**Pendências observadas:** reconexões curtas do WhatsApp (~5/dia, `connecting` → `open` em segundos) pausam e alertam a cada vez. Ajuste planejado: só pausar e alertar se a queda passar de alguns minutos.
