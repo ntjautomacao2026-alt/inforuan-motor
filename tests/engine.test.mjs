@@ -6,7 +6,7 @@ import { readFileSync } from 'node:fs';
 import { PGlite } from '@electric-sql/pglite';
 
 const root = new URL('..', import.meta.url).pathname;
-const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql', 'supabase/migrations/0013_ajustes_teste_e2e.sql']
+const SQL = ['supabase/migrations/0001_core.sql', 'supabase/migrations/0002_functions.sql', 'supabase/migrations/0003_views.sql', 'supabase/migrations/0004_hardening.sql', 'supabase/migrations/0005_fk_indexes.sql', 'supabase/migrations/0006_api_interface.sql', 'supabase/seed/0001_config.sql', 'supabase/migrations/0007_modo_interno.sql', 'supabase/migrations/0009_n8n_engine_limites.sql', 'supabase/migrations/0010_ingestao_gg.sql', 'supabase/migrations/0011_whatsapp_evolution.sql', 'supabase/migrations/0012_gg_datas_firestore.sql', 'supabase/migrations/0013_ajustes_teste_e2e.sql', 'supabase/migrations/0014_reconexoes_whatsapp.sql']
   .map((f) => readFileSync(root + f, 'utf8'));
 
 const T0 = new Date('2026-10-02T13:00:00Z'); // 10:00 em São Paulo
@@ -197,7 +197,9 @@ test('Instância desconectada pausa a fila; reconexão retoma e mensagem vencida
   await dispatch(db, 6);
   await evo(db, { event: 'connection.update', instance: 'inforuan-01', data: { state: 'close' } }, 6);
   assert.equal((await claim(db, 7)).length, 0);
-  assert.ok(await one(db, `select 1 x from alerts where kind='instance_disconnected'`));
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind='instance_disconnected'`)).n, 0, '0014: queda curta não alerta');
+  await db.query(`select set_instance_state('inforuan-01', 'close', $1)`, [at(10)]);   // IR-07 vê a queda persistir
+  assert.ok(await one(db, `select 1 x from alerts where kind='instance_disconnected'`), 'queda > 3 min alerta');
   await evo(db, { event: 'connection.update', instance: 'inforuan-01', data: { state: 'open' } }, 30);
   assert.equal((await claim(db, 30)).length, 0);                    // "Pix ainda válido" venceu (TTL 8 min)
   assert.equal((await one(db, `select status from outbound_messages`)).status, 'expired');
@@ -672,7 +674,7 @@ test('0011: instância errada e eventos inúteis recusados; conexão sempre pass
   const c = await evoApi(db, { event: 'connection.update', instance: 'inforuan-01', data: { state: 'close' } });
   assert.equal(c.accepted, true);
   assert.equal((await one(db, `select state, paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`)).state, 'close');
-  assert.ok(await one(db, `select 1 x from alerts where kind = 'instance_disconnected'`), 'queda de conexão alerta');
+  assert.equal((await one(db, `select paused, pause_reason from provider_instances where instance_name = 'inforuan-01'`)).pause_reason, 'disconnected', 'queda pausa na hora');
   await db.exec(`update settings set value = '"live"' where key = 'engine_mode'`);
   assert.equal((await evoApi(db, inbound('M-LIVE', 'oi'))).accepted, true);
   assert.ok(await one(db, `select 1 x from contacts where phone_e164 = $1`, [PHONE]));
@@ -701,6 +703,7 @@ test('Workflows WhatsApp: IR-02/04/07 rodam como n8n_engine; Evolution só com t
   const ir02 = wfs.find((w) => w.name === 'IR-02 Entrada WhatsApp');
   assert.equal(ir02.settings.saveDataErrorExecution, 'none', 'IR-02 não guarda execução (mensagens de clientes)');
   assert.equal(wfs.find((w) => w.name === 'IR-04 Envio WhatsApp').settings.saveDataErrorExecution, 'none');
+  assert.equal(wfs.find((w) => w.name === 'IR-08 Reconciliacao GGCheckout').settings.saveDataErrorExecution, 'none');
 
   const db = await setup({ holdout: 0, mode: 'internal_only' });
   const run = async (wf, nodeName, ctx) => { await db.exec('set role n8n_engine'); try { const n = pgNode(wfs, wf, nodeName); return (await db.query(n.parameters.query, n8nParams(n, ctx))).rows; } finally { await db.exec('reset role'); } };
@@ -761,4 +764,25 @@ test('0013: pedido sem checkoutId usa o checkout público de venda do produto (n
   const step2 = await one(db, `select rendered_body from outbound_messages where template_key = 'pix_novo_link'`);
   assert.match(step2.rendered_body, /https:\/\/pay\.example\/dDTs0BWHlGqWRdqhQakS/, 'checkout real do produto, não o de teste');
   assert.doesNotMatch(step2.rendered_body, /q0EbnyHD8PgIraUBZTTl/);
+});
+
+test('0014: reconexão curta pausa e libera sem alerta; queda longa gera 1 alerta (dedupe) e o "reconectado" correspondente', async () => {
+  const db = await setup({ holdout: 0 });
+  const set = (st, min) => db.query(`select set_instance_state('inforuan-01', $1, $2)`, [st, at(min)]);
+  const kinds = async () => (await all(db, `select kind from alerts where kind like 'instance_%' order by id`)).map((r) => r.kind);
+  await set('connecting', 0);
+  assert.equal((await one(db, `select paused from provider_instances where instance_name = 'inforuan-01'`)).paused, true, 'pausa imediata');
+  await set('open', 0.2);
+  assert.equal((await one(db, `select paused from provider_instances where instance_name = 'inforuan-01'`)).paused, false, 'libera sozinho');
+  assert.deepEqual(await kinds(), [], 'blip de segundos: nenhum alerta');
+  await set('close', 10);
+  await set('close', 11);
+  assert.deepEqual(await kinds(), [], 'ainda dentro dos 3 min');
+  await set('close', 14);
+  await set('close', 15);
+  await db.query(`select watchdog('inforuan', $1)`, [at(16)]);
+  assert.deepEqual(await kinds(), ['instance_disconnected'], '1 alerta por queda, mesmo checado várias vezes');
+  await set('open', 20);
+  assert.deepEqual(await kinds(), ['instance_disconnected', 'instance_reconnected']);
+  assert.equal((await one(db, `select paused from provider_instances where instance_name = 'inforuan-01'`)).paused, false);
 });

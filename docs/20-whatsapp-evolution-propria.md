@@ -170,3 +170,12 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
 - **Confirmações de entrega/leitura com JID LID** eram descartadas no modo só internos. A **0013** reconhece pelo id da mensagem enviada pelo motor.
 
 **Pendências observadas:** reconexões curtas do WhatsApp (~5/dia, `connecting` → `open` em segundos) pausam e alertam a cada vez. Ajuste planejado: só pausar e alertar se a queda passar de alguns minutos.
+
+## 10. Ajustes pós-teste (15/10/2026)
+
+| Item | Resultado |
+|---|---|
+| **0014** (aplicada) | Reconexões curtas: pausa imediata e liberação automática continuam; o alerta "WhatsApp fora do ar" só sai se a queda passar de 3 min (um por queda, checado pelo IR-07 a cada 60 s e pelo vigia a cada 5 min); o "reconectado" só sai se houve o alerta de queda. Funções idênticas ao repositório |
+| **IR-08** | Importado **inativo** por cima do IR-08 antigo (sem `supabaseApi`). Não guarda execução nem em erro, porque a resposta da API traz dados de clientes |
+| Status de reembolso na API | `refunded` e `charged_back` retornam 0 pagamentos (a conta não tem reembolso registrado na GGCheckout). Nomes a confirmar no 1º caso real |
+| **Pendente antes do Telegram** | Há ~85 alertas antigos de reconexão (anteriores à 0014) não enviados. Marcar como encerrados antes de ativar o IR-06, para não inundar o grupo |

@@ -238,7 +238,7 @@ return [{ json: { items } }];`),
   ['A cada 5 min', 'Consultas'], ['Consultas', 'GG: pagamentos por status'],
   ['GG: pagamentos por status', 'Só id e status (a API mascara dados pessoais)'],
   ['Só id e status (a API mascara dados pessoais)', 'Reconciliar em lote'],
-]);
+], { sensitive: true });   // a resposta da API traz dados de clientes: não guardar execução nem em erro
 
 // ─── IR-02 Entrada WhatsApp (Evolution → motor), rede interna ───────────────
 // URL interna: http://n8n:5678/webhook/evo/<sufixo aleatório> (só a rede Docker do staging alcança; sem porta pública).
