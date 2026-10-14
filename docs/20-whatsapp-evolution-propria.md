@@ -192,3 +192,9 @@ Depois disso o número fica conectado, mas **nada flui**: sem webhook, sem envio
   A simulação dos testes passou a reproduzir o comportamento real (exige texto) e há um teste para os agendamentos.
 - **Reimportação:** IR-02, IR-04, IR-07 e IR-08 reimportados com os mesmos ids e publicados. Só o n8n foi reiniciado.
 - **1ª rodada correta (21:10 UTC):** 4 pagamentos reais registrados **só com id e status** (sem contato), 0 erros, 0 alertas, nenhuma mensagem a cliente.
+
+## 12. Arrumação (14/10/2026, autorizada)
+
+- **Volume do PG16** `inforuan-staging-postgres-data` (72 MB) removido por nome, depois de confirmar que nenhum container o usava e que o n8n roda no PG17.
+- **IR-03** arquivado pelo usuário no editor do n8n.
+- **Pastas de apoio removidas** de `/opt/inforuan-staging`: `migracao-pg17`, `evolution-setup` e `ca-n8n-setup` (~680 KB). Elas tinham cópias antigas do `.env` e o dump final do PG16. Ficam só o `.env` (600), `docker-compose.yml` (= repositório, md5 `01cb2327…`), `certs/` e os backups diários do banco do n8n.
