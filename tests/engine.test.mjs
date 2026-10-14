@@ -799,3 +799,20 @@ test('Workflows: agendamentos ≥ 60 s usam minutos (n8n trata segundos > 59 com
   const ir08 = wfs.find((w) => w.name === 'IR-08 Reconciliacao GGCheckout').nodes.find((n) => n.type === 'n8n-nodes-base.scheduleTrigger');
   assert.deepEqual(ir08.parameters.rule.interval[0], { field: 'minutes', minutesInterval: 5 });
 });
+
+// ─── 0015: escopo da 1ª liberação (aplicada sobre o setup; não entra no SQL padrão dos testes) ─
+test('0015: só o passo 1 da régua e sem pós-venda pelo WhatsApp; religar o pós-venda volta a enfileirar', async () => {
+  const db = await setup({ holdout: 0 });
+  await db.exec(readFileSync(root + 'supabase/migrations/0015_escopo_liberacao_1.sql', 'utf8'));
+  await gg(db, 'pix.generated', 'S1');
+  const steps = await all(db, `select st.position from scheduled_actions sa join sequence_steps st on st.id = sa.step_id order by 1`);
+  assert.deepEqual(steps.map((r) => r.position), [1], 'só o passo 1 é agendado');
+  await dispatch(db, 6);
+  assert.equal((await one(db, `select template_key from outbound_messages`)).template_key, 'pix_ativo');
+  await gg(db, 'pix.paid', 'S1', {}, 8);
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where purpose = 'post_purchase'`)).n, 0, 'sem pós-venda');
+  assert.equal((await one(db, `select count(*)::int n from alerts where kind = 'missing_access_url'`)).n, 0, 'nem alerta');
+  await db.exec(`update settings set value = '"on"' where key = 'post_purchase_whatsapp'`);
+  await gg(db, 'pix.paid', 'S2', { phone: '+5511977770000' }, 9);
+  assert.equal((await one(db, `select count(*)::int n from outbound_messages where purpose = 'post_purchase'`)).n, 1, 'religado');
+});
